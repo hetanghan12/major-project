@@ -1,0 +1,112 @@
+Building a 2D Game Engine (C++/C#)
+
+Tools & Setup
+
+Language & Framework: For C++, popular free libraries include SDL2 and SFML. SDL2 is a cross-platform C/C++ library providing low-level access to audio, keyboard, mouse, joystick, and graphics via OpenGL/Direct3D[1]. SFML (“Simple and Fast Multimedia Library”) is a C++ library that provides an easy API for windowing, input and hardware-accelerated 2D graphics (with image and text support), plus audio and networking[2]. Both are open-source (zlib/png license) and run on Windows/macOS/Linux[2][3]. For C#, MonoGame is a free, open-source framework (an XNA-compatible engine) widely used for 2D games[4][5]. Unity’s free Personal edition is also available and provides a full 2D engine/editor (though building your own engine is different from using Unity).
+
+IDE & Build Tools: Use free IDEs like Visual Studio Community or VS Code (C#) and Visual Studio, Qt Creator, or CLion (C++) with CMake or MSBuild. Install the chosen framework: download SDL2 or SFML development libraries, or install MonoGame via its installer/nuget package[4]. All above tools are free and have straightforward installers.
+
+Phase 1: Basic Systems (≈1–3 months part-time)
+
+1. Window and Rendering: Create a window and game loop. With SFML for example, use sf::RenderWindow which inherits sf::Window (handles events and timing) and adds high-level 2D drawing[6][7]. A typical loop clear→draw→display (double-buffering) redraws the scene each frame[7][8]. You’ll load images into textures and draw sprites (textured quads) easily via SFML, or blit SDL surfaces/texture to the screen with SDL2. (SFML’s graphics module abstracts OpenGL into simple calls[9].) In MonoGame (C#), create a GraphicsDeviceManager and use SpriteBatch in the Draw loop to render textures. These frameworks handle low-level setup so you can focus on 2D drawing.- Tools: SDL2 (use SDL_CreateWindow, SDL_RenderPresent, etc.), SFML Graphics (sf::Sprite, sf::Texture), or MonoGame (XNA-style GraphicsDevice, SpriteBatch)[2][4]. All provide easy 2D rendering.
+
+2. Input Handling: Use the framework’s input/event system. In SDL2 or SFML, poll events each frame (e.g. SDL_PollEvent or window.pollEvent) to catch keyboard and mouse events[6][1]. For instance, SFML’s sf::Window lets you check for sf::Event::KeyPressed or MouseMoved. MonoGame provides Keyboard.GetState() and Mouse.GetState() classes (via Microsoft.Xna.Framework.Input) to query input each update. The key is to decouple input handling from rendering in your game loop (process events, then update game state). These libraries make input straightforward: SDL/SFML give low-level event callbacks, while MonoGame/XNA input classes give polled-state APIs.
+
+3. Asset Loading: Implement resource loading for images, sounds, fonts. SFML can load textures from files via sf::Texture::loadFromFile (built-in support for PNG, JPG, etc.)[10], and audio via sf::SoundBuffer::loadFromFile. SDL2 uses addon libraries like SDL_image (textures) and SDL_mixer/SDL_audio (audio). In MonoGame, use the Content Pipeline: add assets (images, audio, fonts) to the project’s Content and call Content.Load<Texture2D>("file") etc. Store loaded assets in memory (e.g. in resource manager) for reuse. This phase teaches file I/O and resource management.- Tools: SFML/SFML-audio, SDL2 (plus SDL_image, SDL_mixer), MonoGame Content Pipeline. These are well-documented and free.
+
+Phase 2: Intermediate Systems (≈3–6 more months)
+
+4. Scene (Game State) Management: Implement a system to handle different screens (title menus, gameplay, pause, etc.). A common approach is a stack of scenes or a state machine. Each scene has its own update/draw methods. When switching scenes (e.g. push a menu over the game), the manager routes input and render calls to the active scene. This decouples game logic from rendering. No special library is needed; it’s a design pattern. Many MonoGame tutorials cover scene/state management[11].
+
+5. Animation: Build a sprite animation system. Load a sprite sheet (one texture containing multiple frames) and cycle through frames over time. For example, define an AnimatedSprite class holding a sf::Texture or Texture2D and a list of frame rectangles. Each update, advance the frame based on a timer, and draw the appropriate sub-rectangle. SFML and MonoGame both support drawing subregions of a texture. (See MonoGame “AnimatedSprite Class” tutorial[12].) No external library is needed; just use the framework’s drawing with source rects.
+
+6. Audio Playback: Add sound effects and music. SFML provides sf::Sound and sf::Music classes for short sounds and streamed music[13]. SDL2 can play WAV/MP3 via SDL_mixer or raw SDL_Audio. In MonoGame, use SoundEffect for SFX and Song/SoundEffectInstance for music (via the Content Pipeline). Implement volume control and toggling. These features make the game come alive.
+
+7. Basic GUI: For simple in-game UI (menus, HUD), you can either draw sprites/text manually or use a GUI library. Options include Dear ImGui (a free immediate-mode C++ GUI) for debug tools or level editors, or Nuklear (single-header C GUI). In C#, Gum is a free UI framework for MonoGame (used in the official docs[14]). At minimum, implement clickable buttons and text labels using your rendering and input systems. This gives practice with layering and UI logic.
+
+Tools: For GUI, Dear ImGui (C++: MIT license) or Gum (C#) can be used for development tools. They are free and well-documented. Even manually coded UI (simple sprites and hit-testing) is common for games.
+
+Phase 3: Advanced Systems (≈6–12+ more months)
+
+8. Scripting (Lua): Integrate a scripting language for game logic. Lua is popular for this: it’s lightweight, C-friendly, and widely used in engines[15]. You can embed Lua (via libraries like sol2 for C++ or NLua/MoonSharp for C#) so that game objects or behavior can be defined in script files. For example, expose your entity classes to Lua and run a script update() function each frame. This allows designers to write gameplay code without recompiling. “Lua is used a lot for scripting... It is easy to integrate with C and has relatively good performance”[15].
+
+9. Physics (2D Collisions): Add a physics engine for collisions and simulation. Box2D is a free, industry-standard 2D rigid-body physics library[16]. It handles collision detection and rigid-body dynamics. For C#, Farseer Physics Engine is an open-source port of Box2D[17]. Integrate it by creating physics bodies for your game objects and stepping the physics world each update. For simple engines, you can also code basic AABB or circle collision detection yourself. But using Box2D/Farseer saves time and adds realism.- Example: “Box2D – A 2D Physics Engine for Games”[16]; Farseer: “Farseer Physics Engine is an open-source 2D physics engine built on .NET… a direct port of Box2D”[17].
+
+10. Particle Systems: Implement visual effects like explosions, smoke or magic by coding a particle system: lightweight particles with velocity, color, life-span. You update and render many tiny sprites for effect. For fluids and soft particles, consider using LiquidFun (Google’s Box2D extension) – it’s a C++ library adding fluid/soft-body simulation to Box2D[18]. (Alternatively, implement a simple custom particle emitter with random motion.) This is optional but adds polish.
+
+11. Level Editing Tools: Support authoring game levels. A popular free tool is the Tiled Map Editor[19]. Tiled is “a free and open source, easy to use, and flexible level editor”[19] that outputs tile maps in XML/JSON. You can either write a simple loader for Tiled’s TMX format or use a library. In C# with MonoGame, MonoGame.Extended can load Tiled maps easily. In C++, use a TMX parsing library (like tmxlite). This allows designers to draw levels visually.
+
+Tools: Box2D (C++, box2d.org), Farseer Physics (C#, github/farseer), Lua (www.lua.org), Tiled (mapeditor.org) – all are free and beginner-friendly.
+
+Estimated Timeline (Part-Time Beginner)
+
+Basic Phase (Rendering, Input, Assets): ~1–3 months. A complete novice spending ~10 hrs/week can set up a window, draw sprites, handle keyboard/mouse, and load images/sounds. With tutorials (e.g. SFML or MonoGame getting-started guides), expect a few weeks per system.
+
+Intermediate Phase (Scenes, Animation, Audio, GUI): ~3–6 more months. Adding scene/state management, frame-by-frame animation, sound/music playback, and simple menus/UI. Each feature takes a few weeks to design and implement at a learning pace (plus debugging). Expect most of the first few months to be on these.
+
+Advanced Phase (Scripting, Physics, Particles, Level Tools): ~6–12+ additional months. Integrating Lua scripting, adding a physics library (Box2D/Farseer), writing a particle emitter, and hooking up a level editor are more complex. Each may take weeks to months as you learn the library APIs and refine your engine.
+
+Overall: For a beginner working part-time (~10 hours/week), a basic custom 2D engine might be functional in 3–6 months, with a polished set of features taking 9–18 months. This is very approximate and depends on prior experience, but gives a rough multi-phase schedule.
+
+Summary of Resources
+
+C++ Libraries: SDL2 (cross-platform, low-level input/graphics[1]), SFML (easier 2D API[2]), Box2D (free physics[16]), LiquidFun (advanced particle/fluids[18]), Lua+sol2, Dear ImGui (debug UI).
+
+C# Frameworks: MonoGame (free XNA-like game framework[4]), Unity Personal (editor-based engine), Farseer Physics (Box2D port[17]), MoonSharp/NLua (Lua in .NET), Tiled (map editor[19]).
+
+IDEs: Visual Studio Community (Windows), Visual Studio Code (cross-platform), Code::Blocks, etc. All are free.
+
+By following these steps and leveraging the recommended libraries and tutorials, a new developer can incrementally build a 2D game engine. Each phase should be documented with test projects (e.g. a small demo game) to verify the system works before moving on. With patience and iterative progress, the engine will grow in capability while staying approachable.
+
+Sources: Authoritative docs and tutorials for SDL2, SFML, MonoGame, Box2D, Lua, LiquidFun, and Tiled were consulted. For example, SFML’s documentation explains its easy 2D drawing API[9], SDL’s site describes its cross-platform multimedia API[3], and MonoGame’s documentation notes it is a free open-source C# framework for multi-platform 2D games[4][5]. LiquidFun (from Google) is a Box2D-based fluid physics library[18], and Tiled is “free and open source” level editor[19]. These sources confirm tool capabilities and licensing as used above.
+
+
+
+[1] [3] Simple DirectMedia Layer - Homepage
+
+https://www.libsdl.org/
+
+[2] Simple and Fast Multimedia Library - Wikipedia
+
+https://en.wikipedia.org/wiki/Simple_and_Fast_Multimedia_Library
+
+[4] [5] MonoGame - Wikipedia
+
+https://en.wikipedia.org/wiki/MonoGame
+
+[6] [7] [8] [9] Drawing 2D stuff - Simple and Fast Multimedia Library
+
+https://www.sfml-dev.org/tutorials/3.0/graphics/draw/
+
+[10] Sprites and textures - Simple and Fast Multimedia Library
+
+https://www.sfml-dev.org/tutorials/3.0/graphics/sprite/
+
+[11] [12] [14] Building 2D Games with MonoGame | MonoGame 
+
+https://docs.monogame.net/articles/tutorials/building_2d_games/
+
+[13] sfml-dev.org
+
+https://www.sfml-dev.org/tutorials/3.0/audio/sounds/
+
+[15]  Scripting behaviour in a game engine - A small example · SnoozeTime 
+
+https://snoozetime.github.io/2019/01/29/scripting-gameengine.html
+
+[16]  Box2D 
+
+https://box2d.org/
+
+[17] Top 9 Open Source 2D Physics Engines Compared
+
+https://daily.dev/blog/top-9-open-source-2d-physics-engines-compared
+
+[18] LiquidFun
+
+https://google.github.io/liquidfun/
+
+[19] Tiled | Flexible level editor
+
+http://www.mapeditor.org/
+

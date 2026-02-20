@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="document-id" content="c2cc6ee6-5341-46b9-925a-06bc7a2dd395">
+    <title>Document Preview</title>
+    <style>
+        /* Reset and base styles */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+            font-size: 16px;
+            line-height: 1.6;
+            color: #1f2937;
+            background: white;
+            padding: 40px 60px;
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        
+        /* Typography */
+        h1 {
+            font-size: 2em;
+            font-weight: 700;
+            margin-bottom: 0.5em;
+            color: #111827;
+            border-bottom: 2px solid #e5e7eb;
+            padding-bottom: 0.3em;
+        }
+        
+        h1.document-title {
+            font-size: 2.5em;
+            border-bottom: none;
+            text-align: center;
+            margin-bottom: 1em;
+        }
+        
+        h2 {
+            font-size: 1.5em;
+            font-weight: 600;
+            margin-top: 1.5em;
+            margin-bottom: 0.5em;
+            color: #1f2937;
+        }
+        
+        h3 {
+            font-size: 1.25em;
+            font-weight: 600;
+            margin-top: 1.2em;
+            margin-bottom: 0.4em;
+            color: #374151;
+        }
+        
+        h4, h5, h6 {
+            font-size: 1.1em;
+            font-weight: 600;
+            margin-top: 1em;
+            margin-bottom: 0.3em;
+            color: #4b5563;
+        }
+        
+        p {
+            margin-bottom: 1em;
+            text-align: justify;
+        }
+        
+        /* Lists */
+        ul, ol {
+            margin-left: 2em;
+            margin-bottom: 1em;
+        }
+        
+        li {
+            margin-bottom: 0.3em;
+        }
+        
+        /* Tables */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1em 0;
+        }
+        
+        th, td {
+            border: 1px solid #d1d5db;
+            padding: 10px 14px;
+            text-align: left;
+        }
+        
+        th {
+            background: #f3f4f6;
+            font-weight: 600;
+        }
+        
+        tr:nth-child(even) {
+            background: #f9fafb;
+        }
+        
+        /* Blockquotes */
+        blockquote {
+            border-left: 4px solid #5b4ee8;
+            margin: 1em 0;
+            padding: 0.5em 1em;
+            background: #f8f7ff;
+            color: #4b5563;
+            font-style: italic;
+        }
+        
+        /* Code */
+        code {
+            font-family: 'Consolas', 'Monaco', monospace;
+            background: #f3f4f6;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
+        
+        pre {
+            background: #1f2937;
+            color: #e5e7eb;
+            padding: 16px;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin: 1em 0;
+        }
+        
+        pre code {
+            background: none;
+            padding: 0;
+            color: inherit;
+        }
+        
+        /* Images */
+        img {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            margin: 1em auto;
+            border-radius: 4px;
+        }
+        
+        /* Links */
+        a {
+            color: #5b4ee8;
+            text-decoration: none;
+        }
+        
+        a:hover {
+            text-decoration: underline;
+        }
+        
+        /* Search highlight */
+        .search-highlight {
+            background: #fef08a;
+            padding: 2px 0;
+        }
+        
+        /* Print styles */
+        @media print {
+            body {
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <article class="document-content">
+        <a id="X4be42f4127bcae09131b395b56433e288d10cb4"></a><h1>End‑to‑End Documentation: Fine‑Tuning an Audio‑to‑Text (ASR) Model on NVIDIA DGX Spark</h1><a id="purpose-of-this-document"></a><h2>1. Purpose of This Document</h2><p>This documentation explains <strong>step‑by‑step</strong> how to fine‑tune a <strong>pretrained audio‑to‑text (speech recognition) model</strong> locally on <strong>NVIDIA DGX Spark</strong>, assuming <strong>zero prior knowledge</strong> of model training.</p><p>By following this guide, you will: - Set up the system correctly - Install all required software - Prepare audio and text data - Fine‑tune a pretrained ASR model - Run inference (audio → text)</p><p>This is <strong>not training from scratch</strong>. It is <strong>fine‑tuning</strong>, which is the correct and industry‑standard approach.</p><a id="Xdfeb406def458953ebd01c156d6f0c30a763448"></a><h2>2. What You Are Actually Doing (Simple Explanation)</h2><p>Speech‑to‑Text models are already trained on millions of hours of audio. Training again from zero is inefficient. Instead, we:</p><ol><li>Take a pretrained ASR model</li><li>Give it <strong>your own audio + text</strong></li><li>Slightly adjust (fine‑tune) its weights</li><li>Get a model that works better for your data (accent, language, domain)</li></ol><a id="hardware-system-requirements"></a><h2>3. Hardware &amp; System Requirements</h2><a id="mandatory"></a><h3>Mandatory</h3><ul><li>NVIDIA DGX Spark</li><li>Ubuntu Linux</li><li>NVIDIA drivers installed</li><li>CUDA working (nvidia-smi must work)</li></ul><a id="why-dgx-spark"></a><h3>Why DGX Spark?</h3><ul><li>Multiple GPUs</li><li>High‑speed NVLink</li><li>Designed for deep learning workloads</li></ul><a id="software-you-will-use"></a><h2>4. Software You Will Use</h2><table><thead><tr><th><p>Component</p></th><th><p>Purpose</p></th></tr></thead><tbody><tr><td><p>Python</p></td><td><p>Programming language</p></td></tr><tr><td><p>Conda</p></td><td><p>Python environment manager</p></td></tr><tr><td><p>PyTorch</p></td><td><p>Deep learning framework</p></td></tr><tr><td><p>NVIDIA NeMo</p></td><td><p>ASR toolkit</p></td></tr><tr><td><p>FFmpeg</p></td><td><p>Audio conversion</p></td></tr></tbody></table><a id="initial-system-setup"></a><h2>5. Initial System Setup</h2><p>Run the following commands:</p><p>sudo apt update<br />sudo apt install -y git wget sox ffmpeg</p><a id="install-miniconda-python-environment"></a><h2>6. Install Miniconda (Python Environment)</h2><p>wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh<br />bash Miniconda3-latest-Linux-x86_64.sh</p><p>Restart the terminal after installation.</p><a id="create-project-workspace"></a><h2>7. Create Project Workspace</h2><p>mkdir -p ~/asr_training<br />cd ~/asr_training</p><p>All files and training will stay inside this folder.</p><a id="create-python-environment"></a><h2>8. Create Python Environment</h2><p>conda create -n nemo_asr python=3.10 -y<br />conda activate nemo_asr</p><a id="install-nvidia-nemo-asr-toolkit"></a><h2>9. Install NVIDIA NeMo (ASR Toolkit)</h2><p>pip install --upgrade pip<br />pip install nemo_toolkit[asr]<br />pip install pytorch-lightning</p><p>Verify installation:</p><p>python -c "import nemo; print(nemo.__version__)"</p><a id="directory-structure-very-important"></a><h2>10. Directory Structure (Very Important)</h2><p>In this section, we will <strong>create every folder step by step</strong> and explain <strong>why each folder exists</strong>.</p><a id="step-10.1-go-to-project-root"></a><h3>Step 10.1: Go to project root</h3><p>cd ~/asr_training</p><p>This is the main project folder. Everything related to ASR training will stay here.</p><a id="step-10.2-create-main-subfolders"></a><h3>Step 10.2: Create main subfolders</h3><p>mkdir data models scripts configs</p><p>Explanation: - data/ → holds all audio and text data - models/ → stores pretrained and fine-tuned models - scripts/ → Python scripts for training and inference - configs/ → YAML configuration files</p><a id="step-10.3-create-data-subfolders"></a><h3>Step 10.3: Create data subfolders</h3><p>mkdir data/audio data/manifests</p><p>Explanation: - data/audio/ → all .wav audio files - data/manifests/ → JSON files mapping audio to text</p><a id="final-folder-structure"></a><h3>Final folder structure</h3><p>asr_training/<br />│<br />├── data/<br />│   ├── audio/<br />│   └── manifests/<br />│<br />├── models/<br />├── scripts/<br />└── configs/</p><a id="audio-data-preparation"></a><h2>11. Audio Data Preparation</h2><p>This section explains <strong>why audio formatting matters</strong> and <strong>what happens if it is wrong</strong>.</p><p>ASR models do not understand compressed or multi-channel audio. They expect a fixed, clean signal.</p><p>Why these rules exist: - <strong>WAV</strong> → uncompressed, no information loss - <strong>16 kHz</strong> → model was trained at this sampling rate - <strong>Mono</strong> → avoids channel mismatch errors - <strong>PCM</strong> → raw numerical audio samples</p><p>If these conditions are not met, training may: - Crash immediately - Train but give very poor accuracy - Waste GPU time</p><a id="audio-rules-mandatory"></a><h3>Audio Rules (Mandatory)</h3><ul><li>Format: WAV</li><li>Sample rate: 16 kHz</li><li>Channels: Mono</li><li>Encoding: PCM</li></ul><p>Convert audio if needed:</p><p>ffmpeg -i input.mp3 -ar 16000 -ac 1 output.wav</p><p>Place all .wav files in:</p><p>data/audio/</p><a id="create-manifest-files-critical-step"></a><h2>12. Create Manifest Files (Critical Step)</h2><p>This is the <strong>most important file creation step</strong> in the entire pipeline.</p><p>Manifest files act as a <strong>bridge</strong> between your audio files and the model.</p><p>The model does NOT scan folders automatically. It only reads what is written in the manifest.</p><p>Each JSON line answers four questions: 1. Where is the audio file? 2. What words are spoken? 3. How long is the audio? 4. Is the path absolute and correct?</p><p>If even ONE path is wrong, training will fail.</p><p>Manifest files tell the model: - Where audio is located - What text is spoken - How long the audio is</p><a id="example-train.json"></a><h3>Example train.json</h3><p>{"audio_filepath": "/home/harsh/asr_training/data/audio/sample1.wav", "text": "hello how are you", "duration": 3.2}</p><p>Each line must be <strong>valid JSON</strong>.</p><p>Create: - data/manifests/train.json - data/manifests/val.json</p><a id="download-pretrained-asr-model"></a><h2>13. Download Pretrained ASR Model</h2><p>python</p><p>from nemo.collections.asr.models import EncDecCTCModel<br />model = EncDecCTCModel.from_pretrained("nvidia/stt_en_conformer_ctc_large")<br />model.save_to("models/pretrained_asr.nemo")</p><p>Exit Python.</p><a id="training-configuration-file"></a><h2>14. Training Configuration File</h2><p>This file controls <strong>how training behaves</strong>.</p><p>Think of train.yaml as the <strong>remote control</strong> for training.</p><p>Explanation of key parameters: - manifest_filepath → tells the model which data to read - batch_size → number of audio samples processed together - devices → number of GPUs to use - max_epochs → how many full passes over the dataset</p><p>Wrong values here will: - Cause out-of-memory errors - Slow training - Underfit or overfit the model</p><p>Create configs/train.yaml</p><p>model:<br />  train_ds:<br />    manifest_filepath: /home/harsh/asr_training/data/manifests/train.json<br />    batch_size: 32<br />  validation_ds:<br />    manifest_filepath: /home/harsh/asr_training/data/manifests/val.json<br />    batch_size: 16<br /><br />trainer:<br />  devices: 1<br />  accelerator: gpu<br />  max_epochs: 10</p><a id="training-script"></a><h2>15. Training Script</h2><p>This Python file is the <strong>execution engine</strong>.</p><p>What happens inside train.py step by step: 1. Load configuration from YAML 2. Restore pretrained ASR model 3. Initialize GPU trainer 4. Start fine-tuning 5. Save the new model</p><p>This script does NOT define the model architecture. It only: - Loads - Trains - Saves</p><p>That is why fine-tuning is simpler than training from scratch.</p><p>Create scripts/train.py</p><p>from nemo.collections.asr.models import EncDecCTCModel<br />from pytorch_lightning import Trainer<br />from omegaconf import OmegaConf<br /><br />cfg = OmegaConf.load("configs/train.yaml")<br />model = EncDecCTCModel.restore_from("models/pretrained_asr.nemo")<br />trainer = Trainer(**cfg.trainer)<br />trainer.fit(model)<br />model.save_to("models/fine_tuned_asr.nemo")</p><a id="start-training"></a><h2>16. Start Training</h2><p>cd ~/asr_training<br />python scripts/train.py</p><p>You will see GPU usage and training logs.</p><a id="test-the-model-inference"></a><h2>17. Test the Model (Inference)</h2><p>from nemo.collections.asr.models import EncDecCTCModel<br />model = EncDecCTCModel.restore_from("models/fine_tuned_asr.nemo")<br />model.transcribe(["test.wav"])</p><a id="time-expectations"></a><h2>18. Time Expectations</h2><table><thead><tr><th><p>Task</p></th><th><p>Approx Time</p></th></tr></thead><tbody><tr><td><p>Setup</p></td><td><p>1–2 hours</p></td></tr><tr><td><p>Data preparation</p></td><td><p>2–5 hours</p></td></tr><tr><td><p>First training run</p></td><td><p>30–90 minutes</p></td></tr></tbody></table><a id="common-mistakes"></a><h2>19. Common Mistakes</h2><ul><li>Wrong audio format</li><li>Incorrect file paths in manifest</li><li>Poor quality transcripts</li><li>Expecting DGX to fix bad data</li></ul><a id="final-notes"></a><h2>20. Final Notes</h2><ul><li>This approach is industry‑standard</li><li>DGX Spark is powerful but <strong>data quality matters more</strong></li><li>Always start small, then scale</li></ul><a id="next-possible-extensions"></a><h2>21. Next Possible Extensions</h2><ul><li>Multi‑GPU training</li><li>Hindi / Hinglish ASR</li><li>Export model to NVIDIA Riva</li><li>Dataset augmentation</li></ul><p><strong>End of Documentation</strong></p>
+    </article>
+    
+    <script>
+        // Enable text search highlighting
+        window.highlightText = function(searchTerm) {
+            if (!searchTerm) return;
+            
+            const content = document.querySelector('.document-content');
+            const walker = document.createTreeWalker(
+                content,
+                NodeFilter.SHOW_TEXT,
+                null,
+                false
+            );
+            
+            const textNodes = [];
+            while(walker.nextNode()) textNodes.push(walker.currentNode);
+            
+            textNodes.forEach(node => {
+                if (node.nodeValue.toLowerCase().includes(searchTerm.toLowerCase())) {
+                    const span = document.createElement('span');
+                    span.innerHTML = node.nodeValue.replace(
+                        new RegExp('(' + searchTerm + ')', 'gi'),
+                        '<mark class="search-highlight">$1</mark>'
+                    );
+                    node.parentNode.replaceChild(span, node);
+                }
+            });
+        };
+        
+        // Scroll to element with matching text
+        window.scrollToText = function(text) {
+            const content = document.querySelector('.document-content');
+            const marks = content.querySelectorAll('.search-highlight');
+            if (marks.length > 0) {
+                marks[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        };
+    </script>
+</body>
+</html>

@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="document-id" content="e3dcb83b-534b-4b2f-b0e0-8e18a5800e35">
+    <title>Document Preview</title>
+    <style>
+        /* Reset and base styles */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+            font-size: 16px;
+            line-height: 1.6;
+            color: #1f2937;
+            background: white;
+            padding: 40px 60px;
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        
+        /* Typography */
+        h1 {
+            font-size: 2em;
+            font-weight: 700;
+            margin-bottom: 0.5em;
+            color: #111827;
+            border-bottom: 2px solid #e5e7eb;
+            padding-bottom: 0.3em;
+        }
+        
+        h1.document-title {
+            font-size: 2.5em;
+            border-bottom: none;
+            text-align: center;
+            margin-bottom: 1em;
+        }
+        
+        h2 {
+            font-size: 1.5em;
+            font-weight: 600;
+            margin-top: 1.5em;
+            margin-bottom: 0.5em;
+            color: #1f2937;
+        }
+        
+        h3 {
+            font-size: 1.25em;
+            font-weight: 600;
+            margin-top: 1.2em;
+            margin-bottom: 0.4em;
+            color: #374151;
+        }
+        
+        h4, h5, h6 {
+            font-size: 1.1em;
+            font-weight: 600;
+            margin-top: 1em;
+            margin-bottom: 0.3em;
+            color: #4b5563;
+        }
+        
+        p {
+            margin-bottom: 1em;
+            text-align: justify;
+        }
+        
+        /* Lists */
+        ul, ol {
+            margin-left: 2em;
+            margin-bottom: 1em;
+        }
+        
+        li {
+            margin-bottom: 0.3em;
+        }
+        
+        /* Tables */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1em 0;
+        }
+        
+        th, td {
+            border: 1px solid #d1d5db;
+            padding: 10px 14px;
+            text-align: left;
+        }
+        
+        th {
+            background: #f3f4f6;
+            font-weight: 600;
+        }
+        
+        tr:nth-child(even) {
+            background: #f9fafb;
+        }
+        
+        /* Blockquotes */
+        blockquote {
+            border-left: 4px solid #5b4ee8;
+            margin: 1em 0;
+            padding: 0.5em 1em;
+            background: #f8f7ff;
+            color: #4b5563;
+            font-style: italic;
+        }
+        
+        /* Code */
+        code {
+            font-family: 'Consolas', 'Monaco', monospace;
+            background: #f3f4f6;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
+        
+        pre {
+            background: #1f2937;
+            color: #e5e7eb;
+            padding: 16px;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin: 1em 0;
+        }
+        
+        pre code {
+            background: none;
+            padding: 0;
+            color: inherit;
+        }
+        
+        /* Images */
+        img {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            margin: 1em auto;
+            border-radius: 4px;
+        }
+        
+        /* Links */
+        a {
+            color: #5b4ee8;
+            text-decoration: none;
+        }
+        
+        a:hover {
+            text-decoration: underline;
+        }
+        
+        /* Search highlight */
+        .search-highlight {
+            background: #fef08a;
+            padding: 2px 0;
+        }
+        
+        /* Print styles */
+        @media print {
+            body {
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <article class="document-content">
+        <a id="header"></a><a id="content"></a><a id="building-a-2d-game-engine-cc"></a><h1>Building a 2D Game Engine (C++/C#)</h1><a id="tools-setup"></a><h2>Tools &amp; Setup</h2><ul><li><strong>Language &amp; Framework</strong>: For C++, popular free libraries include <strong>SDL2</strong> and <strong>SFML</strong>. SDL2 is a cross-platform C/C++ library providing low-level access to <strong>audio, keyboard, mouse, joystick, and graphics</strong> via OpenGL/Direct3D<a href="https://www.libsdl.org/#:~:text=Simple%20DirectMedia%20Layer%20is%20a,used%20by%20video%20playback%20software">[1]</a>. SFML (“Simple and Fast Multimedia Library”) is a C++ library that provides an easy API for windowing, input and <strong>hardware-accelerated 2D graphics</strong> (with image and text support), plus audio and networking<a href="https://en.wikipedia.org/wiki/Simple_and_Fast_Multimedia_Library#:~:text=SFML%20handles%20creating%20and%20input,UDP">[2]</a>. Both are open-source (zlib/png license) and run on Windows/macOS/Linux<a href="https://en.wikipedia.org/wiki/Simple_and_Fast_Multimedia_Library#:~:text=SFML%20handles%20creating%20and%20input,UDP">[2]</a><a href="https://www.libsdl.org/#:~:text=Simple%20DirectMedia%20Layer%20is%20a,and%20many%20Humble%20Bundle%20games">[3]</a>. For C#, <strong>MonoGame</strong> is a free, open-source framework (an XNA-compatible engine) widely used for 2D games<a href="https://en.wikipedia.org/wiki/MonoGame#:~:text=MonoGame%20is%20a%20free%20,several%20games%2C%20including%20%2078">[4]</a><a href="https://en.wikipedia.org/wiki/MonoGame#:~:text=on%20August%204%2C%202012.%20,8%20support%20currently%20under%20development">[5]</a>. Unity’s free Personal edition is also available and provides a full 2D engine/editor (though building your own engine is different from using Unity).</li><li><strong>IDE &amp; Build Tools</strong>: Use free IDEs like <strong>Visual Studio Community</strong> or <strong>VS Code</strong> (C#) and <strong>Visual Studio</strong>, <strong>Qt Creator</strong>, or <strong>CLion</strong> (C++) with CMake or MSBuild. Install the chosen framework: download SDL2 or SFML development libraries, or install MonoGame via its installer/nuget package<a href="https://en.wikipedia.org/wiki/MonoGame#:~:text=MonoGame%20is%20a%20free%20,several%20games%2C%20including%20%2078">[4]</a>. All above tools are free and have straightforward installers.</li></ul><a id="Xe2333869c5ed7417d3359460636d73bef39ecef"></a><h2>Phase 1: Basic Systems (≈1–3 months part-time)</h2><p><strong>1. Window and Rendering:</strong> Create a window and game loop. With SFML for example, use sf::RenderWindow which inherits sf::Window (handles events and timing) and adds high-level 2D drawing<a href="https://www.sfml-dev.org/tutorials/3.0/graphics/draw/#:~:text=To%20draw%20the%20entities%20provided,to%20%2037%20as%20well">[6]</a><a href="https://www.sfml-dev.org/tutorials/3.0/graphics/draw/#:~:text=Here%20is%20what%20a%20typical,like%20with%20a%20render%20window">[7]</a>. A typical loop <em>clear→draw→display</em> (double-buffering) redraws the scene each frame<a href="https://www.sfml-dev.org/tutorials/3.0/graphics/draw/#:~:text=Here%20is%20what%20a%20typical,like%20with%20a%20render%20window">[7]</a><a href="https://www.sfml-dev.org/tutorials/3.0/graphics/draw/#:~:text=Calling%20,a%20noticeable%20impact%20on%20performance">[8]</a>. You’ll load images into textures and draw sprites (textured quads) easily via SFML, or blit SDL surfaces/texture to the screen with SDL2. (SFML’s graphics module abstracts OpenGL into simple calls<a href="https://www.sfml-dev.org/tutorials/3.0/graphics/draw/#:~:text=As%20you%20learned%20in%20the,and%20low%20level%20OpenGL%20API">[9]</a>.) In MonoGame (C#), create a GraphicsDeviceManager and use SpriteBatch in the Draw loop to render textures. These frameworks handle low-level setup so you can focus on 2D drawing.<br />- <strong>Tools:</strong> SDL2 (use SDL_CreateWindow, SDL_RenderPresent, etc.), SFML Graphics (sf::Sprite, sf::Texture), or MonoGame (XNA-style GraphicsDevice, SpriteBatch)<a href="https://en.wikipedia.org/wiki/Simple_and_Fast_Multimedia_Library#:~:text=SFML%20handles%20creating%20and%20input,UDP">[2]</a><a href="https://en.wikipedia.org/wiki/MonoGame#:~:text=MonoGame%20is%20a%20free%20,several%20games%2C%20including%20%2078">[4]</a>. All provide easy 2D rendering.</p><p><strong>2. Input Handling:</strong> Use the framework’s input/event system. In SDL2 or SFML, poll events each frame (e.g. SDL_PollEvent or window.pollEvent) to catch keyboard and mouse events<a href="https://www.sfml-dev.org/tutorials/3.0/graphics/draw/#:~:text=To%20draw%20the%20entities%20provided,to%20%2037%20as%20well">[6]</a><a href="https://www.libsdl.org/#:~:text=Simple%20DirectMedia%20Layer%20is%20a,used%20by%20video%20playback%20software">[1]</a>. For instance, SFML’s sf::Window lets you check for sf::Event::KeyPressed or MouseMoved. MonoGame provides Keyboard.GetState() and Mouse.GetState() classes (via Microsoft.Xna.Framework.Input) to query input each update. The key is to decouple input handling from rendering in your game loop (process events, then update game state). These libraries make input straightforward: <strong>SDL/SFML give low-level event callbacks</strong>, while <strong>MonoGame/XNA input classes</strong> give polled-state APIs.</p><p><strong>3. Asset Loading:</strong> Implement resource loading for images, sounds, fonts. SFML can load textures from files via sf::Texture::loadFromFile (built-in support for PNG, JPG, etc.)<a href="https://www.sfml-dev.org/tutorials/3.0/graphics/sprite/#:~:text=Loading%20a%20texture">[10]</a>, and audio via sf::SoundBuffer::loadFromFile. SDL2 uses addon libraries like <strong>SDL_image</strong> (textures) and <strong>SDL_mixer/SDL_audio</strong> (audio). In MonoGame, use the Content Pipeline: add assets (images, audio, fonts) to the project’s Content and call Content.Load&lt;Texture2D&gt;("file") etc. Store loaded assets in memory (e.g. in resource manager) for reuse. This phase teaches file I/O and resource management.<br />- <strong>Tools:</strong> SFML/SFML-audio, SDL2 (plus SDL_image, SDL_mixer), MonoGame Content Pipeline. These are well-documented and free.</p><a id="X4f469bcb6497374d140f828c42f4c961b650519"></a><h2>Phase 2: Intermediate Systems (≈3–6 more months)</h2><p><strong>4. Scene (Game State) Management:</strong> Implement a system to handle different screens (title menus, gameplay, pause, etc.). A common approach is a <strong>stack of scenes</strong> or a state machine. Each scene has its own update/draw methods. When switching scenes (e.g. push a menu over the game), the manager routes input and render calls to the active scene. This decouples game logic from rendering. No special library is needed; it’s a design pattern. Many MonoGame tutorials cover scene/state management<a href="https://docs.monogame.net/articles/tutorials/building_2d_games/#:~:text=Chapter%2017%3A%20Scenes%20Learn%20how,integrate%20and%20use%20the%20Gum">[11]</a>.</p><p><strong>5. Animation:</strong> Build a sprite animation system. Load a <strong>sprite sheet</strong> (one texture containing multiple frames) and cycle through frames over time. For example, define an AnimatedSprite class holding a sf::Texture or Texture2D and a list of frame rectangles. Each update, advance the frame based on a timer, and draw the appropriate sub-rectangle. SFML and MonoGame both support drawing subregions of a texture. (See MonoGame “AnimatedSprite Class” tutorial<a href="https://docs.monogame.net/articles/tutorials/building_2d_games/#:~:text=Chapter%2009%3A%20The%20AnimatedSprite%20Class,Input">[12]</a>.) No external library is needed; just use the framework’s drawing with source rects.</p><p><strong>6. Audio Playback:</strong> Add sound effects and music. SFML provides sf::Sound and sf::Music classes for short sounds and streamed music<a href="https://www.sfml-dev.org/tutorials/3.0/audio/sounds/#:~:text=Timeout%20fetching">[13]</a>. SDL2 can play WAV/MP3 via <strong>SDL_mixer</strong> or raw <strong>SDL_Audio</strong>. In MonoGame, use SoundEffect for SFX and Song/SoundEffectInstance for music (via the Content Pipeline). Implement volume control and toggling. These features make the game come alive.</p><p><strong>7. Basic GUI:</strong> For simple in-game UI (menus, HUD), you can either draw sprites/text manually or use a GUI library. Options include <strong>Dear ImGui</strong> (a free immediate-mode C++ GUI) for debug tools or level editors, or <strong>Nuklear</strong> (single-header C GUI). In C#, <strong>Gum</strong> is a free UI framework for MonoGame (used in the official docs<a href="https://docs.monogame.net/articles/tutorials/building_2d_games/#:~:text=Chapter%2019%3A%20User%20Interface%20Fundamentals,UI">[14]</a>). At minimum, implement clickable buttons and text labels using your rendering and input systems. This gives practice with layering and UI logic.</p><ul><li><strong>Tools:</strong> For GUI, Dear ImGui (C++: MIT license) or Gum (C#) can be used for development tools. They are free and well-documented. Even manually coded UI (simple sprites and hit-testing) is common for games.</li></ul><a id="phase-3-advanced-systems-612-more-months"></a><h2>Phase 3: Advanced Systems (≈6–12+ more months)</h2><p><strong>8. Scripting (Lua):</strong> Integrate a scripting language for game logic. <strong>Lua</strong> is popular for this: it’s lightweight, C-friendly, and widely used in engines<a href="https://snoozetime.github.io/2019/01/29/scripting-gameengine.html#:~:text=The%20scripting%20language">[15]</a>. You can embed Lua (via libraries like <a href="https://github.com/ThePhD/sol2">sol2</a> for C++ or NLua/MoonSharp for C#) so that game objects or behavior can be defined in script files. For example, expose your entity classes to Lua and run a script update() function each frame. This allows designers to write gameplay code without recompiling. <em>“Lua is used a lot for scripting... It is easy to integrate with C and has relatively good performance”</em><a href="https://snoozetime.github.io/2019/01/29/scripting-gameengine.html#:~:text=The%20scripting%20language">[15]</a>.</p><p><strong>9. Physics (2D Collisions):</strong> Add a physics engine for collisions and simulation. <strong>Box2D</strong> is a free, industry-standard 2D rigid-body physics library<a href="https://box2d.org/#:~:text=Box2D">[16]</a>. It handles collision detection and rigid-body dynamics. For C#, <strong>Farseer Physics Engine</strong> is an open-source port of Box2D<a href="https://daily.dev/blog/top-9-open-source-2d-physics-engines-compared#:~:text=Farseer%20Physics%20Engine%20is%20an,game%20development%20and%20simulation%20systems">[17]</a>. Integrate it by creating physics bodies for your game objects and stepping the physics world each update. For simple engines, you can also code basic AABB or circle collision detection yourself. But using Box2D/Farseer saves time and adds realism.<br />- <em>Example:</em> “Box2D – A 2D Physics Engine for Games”<a href="https://box2d.org/#:~:text=Box2D">[16]</a>; Farseer: <em>“Farseer Physics Engine is an open-source 2D physics engine built on .NET… a direct port of Box2D”</em><a href="https://daily.dev/blog/top-9-open-source-2d-physics-engines-compared#:~:text=Farseer%20Physics%20Engine%20is%20an,game%20development%20and%20simulation%20systems">[17]</a>.</p><p><strong>10. Particle Systems:</strong> Implement visual effects like explosions, smoke or magic by coding a particle system: lightweight particles with velocity, color, life-span. You update and render many tiny sprites for effect. For fluids and soft particles, consider using <strong>LiquidFun</strong> (Google’s Box2D extension) – it’s a C++ library adding fluid/soft-body simulation to Box2D<a href="https://google.github.io/liquidfun/#:~:text=LiquidFun%20is%20a%202D%20rigid,and%20interact%20in%20realistic%20ways">[18]</a>. (Alternatively, implement a simple custom particle emitter with random motion.) This is optional but adds polish.</p><p><strong>11. Level Editing Tools:</strong> Support authoring game levels. A popular free tool is the <strong>Tiled Map Editor</strong><a href="http://www.mapeditor.org/#:~:text=Full">[19]</a>. Tiled is <em>“a free and open source, easy to use, and flexible level editor”</em><a href="http://www.mapeditor.org/#:~:text=Full">[19]</a> that outputs tile maps in XML/JSON. You can either write a simple loader for Tiled’s TMX format or use a library. In C# with MonoGame, <a href="https://github.com/craftworkgames/MonoGame.Extended">MonoGame.Extended</a> can load Tiled maps easily. In C++, use a TMX parsing library (like <a href="https://github.com/fallahn/tmxlite">tmxlite</a>). This allows designers to draw levels visually.</p><ul><li><strong>Tools:</strong> <strong>Box2D</strong> (C++, <a href="https://box2d.org/">box2d.org</a>), <strong>Farseer Physics</strong> (C#, <a href="https://github.com/VelcroPhysics/VelcroPhysics">github/farseer</a>), <strong>Lua</strong> (www.lua.org), <strong>Tiled</strong> (<a href="http://www.mapeditor.org">mapeditor.org</a>) – all are free and beginner-friendly.</li></ul><a id="estimated-timeline-part-time-beginner"></a><h2>Estimated Timeline (Part-Time Beginner)</h2><ul><li><strong>Basic Phase (Rendering, Input, Assets): ~1–3 months.</strong> A complete novice spending ~10 hrs/week can set up a window, draw sprites, handle keyboard/mouse, and load images/sounds. With tutorials (e.g. SFML or MonoGame getting-started guides), expect a few weeks per system.</li><li><strong>Intermediate Phase (Scenes, Animation, Audio, GUI): ~3–6 more months.</strong> Adding scene/state management, frame-by-frame animation, sound/music playback, and simple menus/UI. Each feature takes a few weeks to design and implement at a learning pace (plus debugging). Expect most of the first few months to be on these.</li><li><strong>Advanced Phase (Scripting, Physics, Particles, Level Tools): ~6–12+ additional months.</strong> Integrating Lua scripting, adding a physics library (Box2D/Farseer), writing a particle emitter, and hooking up a level editor are more complex. Each may take weeks to months as you learn the library APIs and refine your engine.</li></ul><p><strong>Overall:</strong> For a beginner working part-time (~10 hours/week), a basic custom 2D engine might be functional in <strong>3–6 months</strong>, with a polished set of features taking <strong>9–18 months</strong>. This is very approximate and depends on prior experience, but gives a rough multi-phase schedule.</p><a id="summary-of-resources"></a><h2>Summary of Resources</h2><ul><li><strong>C++ Libraries:</strong> <strong>SDL2</strong> (cross-platform, low-level input/graphics<a href="https://www.libsdl.org/#:~:text=Simple%20DirectMedia%20Layer%20is%20a,used%20by%20video%20playback%20software">[1]</a>), <strong>SFML</strong> (easier 2D API<a href="https://en.wikipedia.org/wiki/Simple_and_Fast_Multimedia_Library#:~:text=SFML%20handles%20creating%20and%20input,UDP">[2]</a>), <strong>Box2D</strong> (free physics<a href="https://box2d.org/#:~:text=Box2D">[16]</a>), <strong>LiquidFun</strong> (advanced particle/fluids<a href="https://google.github.io/liquidfun/#:~:text=LiquidFun%20is%20a%202D%20rigid,and%20interact%20in%20realistic%20ways">[18]</a>), <strong>Lua+sol2</strong>, <strong>Dear ImGui</strong> (debug UI).</li><li><strong>C# Frameworks:</strong> <strong>MonoGame</strong> (free XNA-like game framework<a href="https://en.wikipedia.org/wiki/MonoGame#:~:text=MonoGame%20is%20a%20free%20,several%20games%2C%20including%20%2078">[4]</a>), <strong>Unity Personal</strong> (editor-based engine), <strong>Farseer Physics</strong> (Box2D port<a href="https://daily.dev/blog/top-9-open-source-2d-physics-engines-compared#:~:text=Farseer%20Physics%20Engine%20is%20an,game%20development%20and%20simulation%20systems">[17]</a>), <strong>MoonSharp/NLua</strong> (Lua in .NET), <strong>Tiled</strong> (map editor<a href="http://www.mapeditor.org/#:~:text=Full">[19]</a>).</li><li><strong>IDEs:</strong> Visual Studio Community (Windows), Visual Studio Code (cross-platform), Code::Blocks, etc. All are free.</li></ul><p>By following these steps and leveraging the recommended libraries and tutorials, a new developer can incrementally build a 2D game engine. Each phase should be documented with test projects (e.g. a small demo game) to verify the system works before moving on. With patience and iterative progress, the engine will grow in capability while staying approachable.</p><p><strong>Sources:</strong> Authoritative docs and tutorials for SDL2, SFML, MonoGame, Box2D, Lua, LiquidFun, and Tiled were consulted. For example, SFML’s documentation explains its easy 2D drawing API<a href="https://www.sfml-dev.org/tutorials/3.0/graphics/draw/#:~:text=As%20you%20learned%20in%20the,and%20low%20level%20OpenGL%20API">[9]</a>, SDL’s site describes its cross-platform multimedia API<a href="https://www.libsdl.org/#:~:text=Simple%20DirectMedia%20Layer%20is%20a,and%20many%20Humble%20Bundle%20games">[3]</a>, and MonoGame’s documentation notes it is a free open-source C# framework for multi-platform 2D games<a href="https://en.wikipedia.org/wiki/MonoGame#:~:text=MonoGame%20is%20a%20free%20,several%20games%2C%20including%20%2078">[4]</a><a href="https://en.wikipedia.org/wiki/MonoGame#:~:text=on%20August%204%2C%202012.%20,8%20support%20currently%20under%20development">[5]</a>. LiquidFun (from Google) is a Box2D-based fluid physics library<a href="https://google.github.io/liquidfun/#:~:text=LiquidFun%20is%20a%202D%20rigid,and%20interact%20in%20realistic%20ways">[18]</a>, and Tiled is “free and open source” level editor<a href="http://www.mapeditor.org/#:~:text=Full">[19]</a>. These sources confirm tool capabilities and licensing as used above.</p><a id="citations"></a><p><a href="https://www.libsdl.org/#:~:text=Simple%20DirectMedia%20Layer%20is%20a,used%20by%20video%20playback%20software">[1]</a> <a href="https://www.libsdl.org/#:~:text=Simple%20DirectMedia%20Layer%20is%20a,and%20many%20Humble%20Bundle%20games">[3]</a> Simple DirectMedia Layer - Homepage</p><p><a href="https://www.libsdl.org/">https://www.libsdl.org/</a></p><p><a href="https://en.wikipedia.org/wiki/Simple_and_Fast_Multimedia_Library#:~:text=SFML%20handles%20creating%20and%20input,UDP">[2]</a> Simple and Fast Multimedia Library - Wikipedia</p><p><a href="https://en.wikipedia.org/wiki/Simple_and_Fast_Multimedia_Library">https://en.wikipedia.org/wiki/Simple_and_Fast_Multimedia_Library</a></p><p><a href="https://en.wikipedia.org/wiki/MonoGame#:~:text=MonoGame%20is%20a%20free%20,several%20games%2C%20including%20%2078">[4]</a> <a href="https://en.wikipedia.org/wiki/MonoGame#:~:text=on%20August%204%2C%202012.%20,8%20support%20currently%20under%20development">[5]</a> MonoGame - Wikipedia</p><p><a href="https://en.wikipedia.org/wiki/MonoGame">https://en.wikipedia.org/wiki/MonoGame</a></p><p><a href="https://www.sfml-dev.org/tutorials/3.0/graphics/draw/#:~:text=To%20draw%20the%20entities%20provided,to%20%2037%20as%20well">[6]</a> <a href="https://www.sfml-dev.org/tutorials/3.0/graphics/draw/#:~:text=Here%20is%20what%20a%20typical,like%20with%20a%20render%20window">[7]</a> <a href="https://www.sfml-dev.org/tutorials/3.0/graphics/draw/#:~:text=Calling%20,a%20noticeable%20impact%20on%20performance">[8]</a> <a href="https://www.sfml-dev.org/tutorials/3.0/graphics/draw/#:~:text=As%20you%20learned%20in%20the,and%20low%20level%20OpenGL%20API">[9]</a> Drawing 2D stuff - Simple and Fast Multimedia Library</p><p><a href="https://www.sfml-dev.org/tutorials/3.0/graphics/draw/">https://www.sfml-dev.org/tutorials/3.0/graphics/draw/</a></p><p><a href="https://www.sfml-dev.org/tutorials/3.0/graphics/sprite/#:~:text=Loading%20a%20texture">[10]</a> Sprites and textures - Simple and Fast Multimedia Library</p><p><a href="https://www.sfml-dev.org/tutorials/3.0/graphics/sprite/">https://www.sfml-dev.org/tutorials/3.0/graphics/sprite/</a></p><p><a href="https://docs.monogame.net/articles/tutorials/building_2d_games/#:~:text=Chapter%2017%3A%20Scenes%20Learn%20how,integrate%20and%20use%20the%20Gum">[11]</a> <a href="https://docs.monogame.net/articles/tutorials/building_2d_games/#:~:text=Chapter%2009%3A%20The%20AnimatedSprite%20Class,Input">[12]</a> <a href="https://docs.monogame.net/articles/tutorials/building_2d_games/#:~:text=Chapter%2019%3A%20User%20Interface%20Fundamentals,UI">[14]</a> Building 2D Games with MonoGame | MonoGame </p><p><a href="https://docs.monogame.net/articles/tutorials/building_2d_games/">https://docs.monogame.net/articles/tutorials/building_2d_games/</a></p><p><a href="https://www.sfml-dev.org/tutorials/3.0/audio/sounds/#:~:text=Timeout%20fetching">[13]</a> sfml-dev.org</p><p><a href="https://www.sfml-dev.org/tutorials/3.0/audio/sounds/">https://www.sfml-dev.org/tutorials/3.0/audio/sounds/</a></p><p><a href="https://snoozetime.github.io/2019/01/29/scripting-gameengine.html#:~:text=The%20scripting%20language">[15]</a>  Scripting behaviour in a game engine - A small example · SnoozeTime </p><p><a href="https://snoozetime.github.io/2019/01/29/scripting-gameengine.html">https://snoozetime.github.io/2019/01/29/scripting-gameengine.html</a></p><p><a href="https://box2d.org/#:~:text=Box2D">[16]</a>  Box2D </p><p><a href="https://box2d.org/">https://box2d.org/</a></p><p><a href="https://daily.dev/blog/top-9-open-source-2d-physics-engines-compared#:~:text=Farseer%20Physics%20Engine%20is%20an,game%20development%20and%20simulation%20systems">[17]</a> Top 9 Open Source 2D Physics Engines Compared</p><p><a href="https://daily.dev/blog/top-9-open-source-2d-physics-engines-compared">https://daily.dev/blog/top-9-open-source-2d-physics-engines-compared</a></p><p><a href="https://google.github.io/liquidfun/#:~:text=LiquidFun%20is%20a%202D%20rigid,and%20interact%20in%20realistic%20ways">[18]</a> LiquidFun</p><p><a href="https://google.github.io/liquidfun/">https://google.github.io/liquidfun/</a></p><p><a href="http://www.mapeditor.org/#:~:text=Full">[19]</a> Tiled | Flexible level editor</p><p><a href="http://www.mapeditor.org/">http://www.mapeditor.org/</a></p>
+    </article>
+    
+    <script>
+        // Enable text search highlighting
+        window.highlightText = function(searchTerm) {
+            if (!searchTerm) return;
+            
+            const content = document.querySelector('.document-content');
+            const walker = document.createTreeWalker(
+                content,
+                NodeFilter.SHOW_TEXT,
+                null,
+                false
+            );
+            
+            const textNodes = [];
+            while(walker.nextNode()) textNodes.push(walker.currentNode);
+            
+            textNodes.forEach(node => {
+                if (node.nodeValue.toLowerCase().includes(searchTerm.toLowerCase())) {
+                    const span = document.createElement('span');
+                    span.innerHTML = node.nodeValue.replace(
+                        new RegExp('(' + searchTerm + ')', 'gi'),
+                        '<mark class="search-highlight">$1</mark>'
+                    );
+                    node.parentNode.replaceChild(span, node);
+                }
+            });
+        };
+        
+        // Scroll to element with matching text
+        window.scrollToText = function(text) {
+            const content = document.querySelector('.document-content');
+            const marks = content.querySelectorAll('.search-highlight');
+            if (marks.length > 0) {
+                marks[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        };
+    </script>
+</body>
+</html>

@@ -1,0 +1,44 @@
+/**
+ * Auth Guard
+ * ============
+ * Protects routes that require authentication.
+ */
+
+import { CanActivateFn, Router } from '@angular/router';
+import { inject } from '@angular/core';
+import { AuthService } from '../services/auth.service';
+
+export const authGuard: CanActivateFn = (route, state) => {
+    const authService = inject(AuthService);
+    const router = inject(Router);
+
+    // Check if user is loading
+    if (authService.isLoading()) {
+        // Wait for auth check to complete
+        return new Promise((resolve) => {
+            const checkAuth = setInterval(() => {
+                if (!authService.isLoading()) {
+                    clearInterval(checkAuth);
+                    if (authService.isAuthenticated()) {
+                        resolve(true);
+                    } else {
+                        router.navigate(['/login'], {
+                            queryParams: { returnUrl: state.url }
+                        });
+                        resolve(false);
+                    }
+                }
+            }, 100);
+        });
+    }
+
+    if (authService.isAuthenticated()) {
+        return true;
+    }
+
+    // Redirect to login
+    router.navigate(['/login'], {
+        queryParams: { returnUrl: state.url }
+    });
+    return false;
+};

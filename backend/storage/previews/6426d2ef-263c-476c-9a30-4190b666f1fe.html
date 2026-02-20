@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="document-id" content="6426d2ef-263c-476c-9a30-4190b666f1fe">
+    <title>Document Preview</title>
+    <style>
+        /* Reset and base styles */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+            font-size: 16px;
+            line-height: 1.6;
+            color: #1f2937;
+            background: white;
+            padding: 40px 60px;
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        
+        /* Typography */
+        h1 {
+            font-size: 2em;
+            font-weight: 700;
+            margin-bottom: 0.5em;
+            color: #111827;
+            border-bottom: 2px solid #e5e7eb;
+            padding-bottom: 0.3em;
+        }
+        
+        h1.document-title {
+            font-size: 2.5em;
+            border-bottom: none;
+            text-align: center;
+            margin-bottom: 1em;
+        }
+        
+        h2 {
+            font-size: 1.5em;
+            font-weight: 600;
+            margin-top: 1.5em;
+            margin-bottom: 0.5em;
+            color: #1f2937;
+        }
+        
+        h3 {
+            font-size: 1.25em;
+            font-weight: 600;
+            margin-top: 1.2em;
+            margin-bottom: 0.4em;
+            color: #374151;
+        }
+        
+        h4, h5, h6 {
+            font-size: 1.1em;
+            font-weight: 600;
+            margin-top: 1em;
+            margin-bottom: 0.3em;
+            color: #4b5563;
+        }
+        
+        p {
+            margin-bottom: 1em;
+            text-align: justify;
+        }
+        
+        /* Lists */
+        ul, ol {
+            margin-left: 2em;
+            margin-bottom: 1em;
+        }
+        
+        li {
+            margin-bottom: 0.3em;
+        }
+        
+        /* Tables */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1em 0;
+        }
+        
+        th, td {
+            border: 1px solid #d1d5db;
+            padding: 10px 14px;
+            text-align: left;
+        }
+        
+        th {
+            background: #f3f4f6;
+            font-weight: 600;
+        }
+        
+        tr:nth-child(even) {
+            background: #f9fafb;
+        }
+        
+        /* Blockquotes */
+        blockquote {
+            border-left: 4px solid #5b4ee8;
+            margin: 1em 0;
+            padding: 0.5em 1em;
+            background: #f8f7ff;
+            color: #4b5563;
+            font-style: italic;
+        }
+        
+        /* Code */
+        code {
+            font-family: 'Consolas', 'Monaco', monospace;
+            background: #f3f4f6;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
+        
+        pre {
+            background: #1f2937;
+            color: #e5e7eb;
+            padding: 16px;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin: 1em 0;
+        }
+        
+        pre code {
+            background: none;
+            padding: 0;
+            color: inherit;
+        }
+        
+        /* Images */
+        img {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            margin: 1em auto;
+            border-radius: 4px;
+        }
+        
+        /* Links */
+        a {
+            color: #5b4ee8;
+            text-decoration: none;
+        }
+        
+        a:hover {
+            text-decoration: underline;
+        }
+        
+        /* Search highlight */
+        .search-highlight {
+            background: #fef08a;
+            padding: 2px 0;
+        }
+        
+        /* Print styles */
+        @media print {
+            body {
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <article class="document-content">
+        <h1>Architectural Optimization and Orchestration of Multilingual ASR Systems on the NVIDIA DGX Spark</h1><p>The landscape of Automatic Speech Recognition has undergone a significant transformation with the introduction of the NVIDIA DGX Spark. This platform serves as a localized powerhouse for researchers and developers tasked with the engineering of advanced speech-to-text systems.<sup>1</sup> The particular challenge of transcribing English, Hindi, and code-switched Hinglish requires a sophisticated interplay between high-parameter foundation models and high-bandwidth hardware architectures.<sup>3</sup> By leveraging the NVIDIA Grace Blackwell GB10 Superchip, developers can now bypass the typical limitations of consumer-grade hardware, specifically the VRAM constraints that often stifle the fine-tuning of large-scale Transformer-based models.<sup>4</sup></p><p>The transition to a unified memory architecture facilitates the training of models that were previously restricted to data-center-scale deployments. The coherent 128 GB memory pool allows for the simultaneous handling of massive audio feature tensors and model weights without the latency penalties associated with PCIe bus data transfers.<sup>4</sup> This report provides a comprehensive guide to selecting, setting up, and optimizing a speech-to-text pipeline on the DGX Spark, focusing on the unique linguistic requirements of the Indian subcontinent and the technical nuances of the ARM64-based Blackwell ecosystem.<sup>7</sup></p><h2>Hardware Infrastructure: The Grace Blackwell GB10 Superchip</h2><p>The primary technical advantage of the NVIDIA DGX Spark is its integration of the GB10 Grace Blackwell Superchip. This system-on-chip (SoC) combines a 20-core Arm CPU with a Blackwell architecture GPU.<sup>6</sup> The hardware is specifically designed to handle the prefill and decode stages of large language models with extreme efficiency, boasting up to one petaFLOP of AI performance at FP4 precision.<sup>1</sup></p><h3>System Hardware Components and Specifications</h3><p>The engineering details of the DGX Spark are tailored for local AI development environments where power efficiency and thermal management are as critical as raw compute throughput.</p><table><thead><tr><th><p><strong>Component</strong></p></th><th><p><strong>Technical Detail</strong></p></th></tr><tr><th><p><strong>SoC Architecture</strong></p></th><th><p>NVIDIA Grace Blackwell (GB10) <sup>1</sup></p></th></tr><tr><th><p><strong>CPU Core Composition</strong></p></th><th><p>10x Cortex-X925 (Performance) + 10x Cortex-A725 (Efficiency) <sup>1</sup></p></th></tr><tr><th><p><strong>GPU Configuration</strong></p></th><th><p>Blackwell Architecture with 5th Gen Tensor Cores <sup>1</sup></p></th></tr><tr><th><p><strong>Memory Architecture</strong></p></th><th><p>128 GB LPDDR5x Unified System Memory (256-bit interface) <sup>1</sup></p></th></tr><tr><th><p><strong>Memory Bandwidth</strong></p></th><th><p>273 GB/s <sup>1</sup></p></th></tr><tr><th><p><strong>Storage Infrastructure</strong></p></th><th><p>4 TB NVMe M.2 with hardware-based self-encryption <sup>1</sup></p></th></tr><tr><th><p><strong>Network Interface</strong></p></th><th><p>ConnectX-7 Smart NIC, 10 GbE, Wi-Fi 7, Bluetooth 5.4 <sup>1</sup></p></th></tr><tr><th><p><strong>Thermal Design</strong></p></th><th><p>240W External PSU, 140W SOC TDP <sup>6</sup></p></th></tr></thead></table><p>The unified memory architecture is the defining feature of the Spark. In traditional discrete systems, a developer would be limited by the VRAM of a single GPU—typically 24 GB in top-tier consumer models. The Spark's ability to utilize nearly the entire 128 GB pool for GPU workloads allows for the local fine-tuning of models with up to 70 billion parameters, such as Llama-3 or large Whisper variants, which otherwise would require multi-GPU setups.<sup>1</sup></p><h2>Linguistic Analysis of Code-Switched Hinglish Systems</h2><p>Transcribing Hinglish presents a significant linguistic hurdle because it is not merely a mixture of two vocabularies but a complex code-switching phenomenon where grammar and syntax often blend.<sup>3</sup> Research into code-switched ASR indicates that standard monolingual models struggle because they lack the necessary contextual switches in their internal language models.<sup>3</sup></p><p>The Word Error Rate (WER) is the industry standard for evaluating these systems. For Hinglish, the complexity is magnified by the need to handle diverse Indian accents and varying levels of background noise.<sup>7</sup></p><p>$$WER = \frac{S + I + D}{N}$$</p><p>In the above equation, $S$ represents substitutions, $I$ insertions, $D$ deletions, and $N$ the total number of words in the reference.<sup>13</sup> Traditional Whisper models, while powerful for monolingual tasks, often experience deletions when switching languages in a code-mixed environment.<sup>11</sup> This necessitates the use of specialized pre-trained models that have been exposed to noisy, Indian-accented audio during their initial adaptation phases.<sup>7</sup></p><h2>Selecting the Foundation ASR Model for Indian Languages</h2><p>For a developer working on the DGX Spark, the optimal model must balance parameter count with the specific linguistic needs of English, Hindi, and Hinglish. While OpenAI's generic Whisper models are highly capable, they often fail to capture the nuances of Hinglish.<sup>11</sup> The recommended selection is the <strong>Whisper-Hindi2Hinglish-Apex</strong> model developed by Oriserve.<sup>7</sup></p><h3>Comparative Model Evaluation for Multilingual ASR</h3><table><thead><tr><th><p><strong>Model Variant</strong></p></th><th><p><strong>Base Model</strong></p></th><th><p><strong>Tuning Dataset Size</strong></p></th><th><p><strong>Performance Profile</strong></p></th></tr><tr><th><p><strong>Whisper-Hindi2Hinglish-Apex</strong></p></th><th><p>whisper-small</p></th><th><p>700 Hours <sup>7</sup></p></th><th><p>Optimized for noisy Indian accents; highest ranking in Hinglish preference tests <sup>7</sup></p></th></tr><tr><th><p><strong>Whisper-Hindi2Hinglish-Prime</strong></p></th><th><p>whisper-large-v3</p></th><th><p>550 Hours <sup>12</sup></p></th><th><p>Maximum accuracy for complex reasoning; fits well within Spark's 128 GB memory <sup>12</sup></p></th></tr><tr><th><p><strong>Whisper-Hindi2Hinglish-Swift</strong></p></th><th><p>Distilled Whisper</p></th><th><p>550 Hours <sup>15</sup></p></th><th><p>Optimized for low-latency voice agents and real-time transcription <sup>15</sup></p></th></tr><tr><th><p><strong>Whisper-Hindi-Small</strong></p></th><th><p>whisper-small</p></th><th><p>GramVaani/ULCA <sup>16</sup></p></th><th><p>Strong monolingual Hindi performance; efficient inference <sup>16</sup></p></th></tr></thead></table><p>The "Apex" variant is specifically noted for its use of Custom Dynamic Layer Freezing.<sup>7</sup> During the fine-tuning process, only the most active layers identified during inference are kept unfrozen, which speeds up convergence and improves the model's ability to ignore background noise—a common requirement in Indian environments.<sup>7</sup></p><h2>Initial Setup and Environmental Configuration</h2><p>The DGX Spark runs on DGX OS, a specialized Ubuntu-based distribution.<sup>4</sup> Setting up an ASR training environment on an ARM64 (aarch64) system requires careful management of dependencies, as many standard x86-64 binaries will not be compatible.<sup>8</sup></p><h3>System Initialization Commands</h3><p>The first step after booting the system is ensuring the package manager and core drivers are updated to the latest Grace Blackwell-compatible versions.<sup>9</sup></p><p>sudo apt update &amp;&amp; sudo apt full-upgrade -y</p><p>For AI development, the system requires the NGC CLI to access NVIDIA's optimized containers and pre-trained models.<sup>17</sup> The ARM64 version of the NGC CLI must be used.<sup>17</sup></p><p>wget -O ngccli_linux.zip https://org.ngc.nvidia.com/setup/installers/cli/linux-arm64</p><p>unzip ngccli_linux.zip &amp;&amp; chmod u+x ngc</p><h3>CUDA and Library Configuration for sm_121</h3><p>The Blackwell GPU in the Spark utilizes compute capability 12.1 (sm_121).<sup>8</sup> Rebuilding the ML stack specifically for this architecture can yield a 50% performance improvement by unlocking FP4/FP8 tensor core instructions.<sup>9</sup></p><p>export TORCH_CUDA_ARCH_LIST="12.1"</p><p>pip install --extra-index-url https://download.pytorch.org/whl/cu128 torch torchvision torchaudio</p><p>A critical component for fine-tuning LLMs is the bitsandbytes library, which allows for 8-bit and 4-bit quantization.<sup>19</sup> On ARM64 systems, standard pip installation may fail; developers should use the specialized index from the Jetson AI Lab.<sup>21</sup></p><p>pip install bitsandbytes --index-url https://pypi.jetson-ai-lab.dev/sbsa/cu128</p><h2>ASR Project File and Directory Structure</h2><p>An organized directory structure is essential for managing the 15.6 GB datasets and the multi-step training pipeline on the Spark's 4 TB NVMe drive.<sup>6</sup></p><p>/home/user/asr_development/</p><p>├── env/ # Python Virtual Environment</p><p>├── datasets/ # Audio and transcription data</p><p>│ ├── raw/ # Original downloads (Common Voice, HiACC)</p><p>│ ├── processed/ # Resampled 16kHz audio clips</p><p>│ │ ├── train/</p><p>│ │ ├── validation/</p><p>│ │ └── metadata.csv # audio_path, transcription mappings</p><p>├── model_cache/ # Locally stored foundation model weights</p><p>├── checkpoints/ # Saved weights during fine-tuning</p><p>├── scripts/ # Management and training scripts</p><p>│ ├── setup.sh # Environment setup automation</p><p>│ ├── preprocess_audio.py # Audio resampling and normalization</p><p>│ ├── fine_tune_lora.py # Main PEFT training script</p><p>│ └── evaluate_asr.py # WER calculation and testing</p><p>├── requirements.txt # Project-specific dependencies`</p><p>└── README.md # Operational documentation 23</p><h2>Data Acquisition and Resource Links</h2><p>Training a model for English, Hindi, and Hinglish requires sourcing diverse audio-to-text paired data.</p><h3>Key Data Resources for Hinglish ASR</h3><table><thead><tr><th><p><strong>Dataset</strong></p></th><th><p><strong>Language Profile</strong></p></th><th><p><strong>Source URL/Link</strong></p></th><th><p><strong>Importance</strong></p></th></tr><tr><th><p><strong>HiACC</strong></p></th><th><p>Hinglish Code-Switched</p></th><th><p>[<a href="https://zenodo.org/records/15551669">https://zenodo.org/records/15551669</a>]</p></th><th><p>First dataset to include children's Hinglish speech <sup>3</sup></p></th></tr><tr><th><p><strong>Common Voice 11.0</strong></p></th><th><p>Hindi</p></th><th></th><th><p>High-quality community-contributed Hindi audio <sup>25</sup></p></th></tr><tr><th><p><strong>IITG-HingCoS</strong></p></th><th><p>Hindi-English</p></th><th></th><th><p>25 hours of matched Hinglish audio/text <sup>28</sup></p></th></tr><tr><th><p><strong>Shrutilipi</strong></p></th><th><p>Hindi (News)</p></th><th><p>AI4Bharat/HuggingFace</p></th><th><p>1,600 hours of Indian news bulletins <sup>25</sup></p></th></tr><tr><th><p><strong>Hinglish Everyday</strong></p></th><th><p>Hinglish Text</p></th><th><p>[Abhishekcr448/Hinglish-Everyday]</p></th><th><p>1M conversation rows for language modeling <sup>29</sup></p></th></tr></thead></table><p>The HiACC dataset provides 5.24 hours of spontaneous and read speech, including 3,318 adult segments and 1,858 child segments.<sup>3</sup> This is critical because models trained solely on adult speech typically underperform by 42% on child speech datasets.<sup>3</sup></p><h2>Fine-Tuning Methodology on the DGX Spark</h2><p>The objective is to pre-train (fine-tune) the suggested model using local data. Low-Rank Adaptation (LoRA) is the preferred method on the Spark as it allows for training large models with minimal parameter updates, preserving the base model's knowledge while adapting to code-switching.<sup>14</sup></p><h3>Training Logic and Hyperparameters</h3><p>When fine-tuning Whisper on the Spark, several hardware-specific optimizations should be implemented:</p><ol><li><strong>Unified Memory Usage</strong>: Since memory is shared, use a larger per_device_train_batch_size (e.g., 32 or 64) to maximize throughput.<sup>4</sup></li><li><strong>Flash Attention 2</strong>: Enable this for faster attention calculations on the Blackwell GPU.<sup>7</sup></li><li><strong>8-bit Quantization</strong>: Use bitsandbytes to load the model in 8-bit mode to further save memory for massive audio contexts.<sup>14</sup></li></ol><h3>Implementation Code for Environment Setup</h3><p>The following bash script automates the installation of the core ASR stack on the DGX Spark.</p><p>Bash</p><p>#!/bin/bash<br /># ASR Environment Setup for DGX Spark (ARM64)<br /><br /># Create and activate virtual environment<br />python3 -m venv ~/asr_development/env<br />source ~/asr_development/env/bin/activate<br /><br /># Install core deep learning libraries for ARM64<br />pip install --upgrade pip<br />pip install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu128<br /><br /># Install specialized bitsandbytes for ARM64/SBSA<br />pip install bitsandbytes --index-url https://pypi.jetson-ai-lab.dev/sbsa/cu128<br /><br /># Install Hugging Face stack and audio utilities<br />pip install transformers datasets accelerate peft evaluate jiwer librosa soundfile<br /><br /># Install Flash Attention 2 for Blackwell support<br />pip install flash-attn --no-build-isolation<br /><br />echo "ASR Development environment setup complete."<br />``` [19, 21, 31, 34]<br /><br />## Data Preprocessing and Feature Extraction Pipeline<br /><br />Audio must be resampled to 16,000 Hz to meet Whisper's input requirements.[14, 34] The `WhisperFeatureExtractor` then converts this audio into 80-dimensional log-Mel spectrogram frames.[33, 34, 35]<br /><br />### Feature Extraction and Mapping Code<br /><br />```python<br />import torch<br />from datasets import load_dataset, Audio<br />from transformers import WhisperFeatureExtractor, WhisperTokenizer, WhisperProcessor<br /><br /># Model selection<br />model_id = "Oriserve/Whisper-Hindi2Hinglish-Apex"<br /><br /># Initialize processor (combines feature extractor and tokenizer)<br /># Task is 'transcribe', language is 'Hindi' as the base<br />processor = WhisperProcessor.from_pretrained(model_id, language="Hindi", task="transcribe")<br /><br />def prepare_asr_dataset(batch):<br />    # Whisper expects 16kHz audio<br />    audio = batch["audio"]<br />    <br />    # Compute log-Mel spectrogram features<br />    batch["input_features"] = processor.feature_extractor(<br />        audio["array"], <br />        sampling_rate=audio["sampling_rate"]<br />    ).input_features<br />    <br />    # Tokenize the transcription labels<br />    batch["labels"] = processor.tokenizer(batch["transcription"]).input_ids<br />    return batch<br /><br /># Loading local audio dataset<br /># Ensure audio files are in ~/asr_development/datasets/processed/train/<br />dataset = load_dataset("audiofolder", data_dir="~/asr_development/datasets/processed/")<br />dataset = dataset.cast_column("audio", Audio(sampling_rate=16000))<br /><br /># Map the preparation function over the dataset<br />processed_dataset = dataset.map(prepare_asr_dataset, remove_columns=dataset.column_names["train"], num_proc=4)<br />``` [23, 33, 34, 35]<br /><br />## Optimization for the Blackwell GPU Architecture<br /><br />The sm_121 compute capability of the DGX Spark requires specific compiler flags to ensure optimal kernel generation. Developers should target the `gb10` CPU and GPU architecture directly during any local compilation tasks.[36]<br /><br />### Tuning for sm_121 Performance<br /><br />| Optimization Technique | Benefit for DGX Spark | Implementation Detail |<br />| :--- | :--- | :--- |<br />| **FP4 Precision** | Significant throughput boost for inference  | Supported by Blackwell 5th Gen Tensor Cores  |<br />| **Triton GPU Compiler** | JIT-compiles optimized fused kernels  | Rebuild Triton from source for sm_121 compatibility  |<br />| **Unified Memory Access** | Zero-copy data sharing between CPU/GPU [4] | Use `device_map="auto"` in Transformers for optimal allocation [14] |<br />| **Flash Attention 2** | Up to 8x faster transcription speed  | Use `attn_implementation="flash_attention_2"` during model loading  |<br /><br />Benchmarking shows that while the Spark excels at prompt ingestion (prefill) due to its high TOPS, the token generation (decode) speed is capped by the LPDDR5x bandwidth.[37, 38] At 38 tokens/second for large models, it is slower than multi-GPU RTX 3090/4090 rigs but offers significantly higher model capacity within its 128 GB unified RAM.[37, 39]<br /><br />## Final Implementation of the Training Loop<br /><br />With the environment and data ready, the final step is executing the fine-tuning script. The use of `gradient_checkpointing` is advised to save memory, although the Spark's 128 GB pool is often sufficient without it for smaller models like `whisper-small`.[13, 35]<br /><br />### LoRA Fine-Tuning Execution Script<br /><br />```python<br />from transformers import Seq2SeqTrainingArguments, Seq2SeqTrainer, WhisperForConditionalGeneration<br />from peft import LoraConfig, get_peft_model<br /><br />model_id = "Oriserve/Whisper-Hindi2Hinglish-Apex"<br />model = WhisperForConditionalGeneration.from_pretrained(model_id, load_in_8bit=True, device_map="auto")<br /><br /># PEFT Configuration<br />config = LoraConfig(<br />    r=32, <br />    lora_alpha=64, <br />    target_modules=["q_proj", "v_proj"], <br />    lora_dropout=0.05, <br />    bias="none"<br />)<br />model = get_peft_model(model, config)<br /><br /># Define Training Arguments for DGX Spark<br />training_args = Seq2SeqTrainingArguments(<br />    output_dir="./whisper_hinglish_apex",<br />    per_device_train_batch_size=16,<br />    gradient_accumulation_steps=2,<br />    learning_rate=1e-5,<br />    warmup_steps=500,<br />    max_steps=5000,<br />    fp16=True,<br />    evaluation_strategy="steps",<br />    eval_steps=1000,<br />    save_steps=1000,<br />    predict_with_generate=True,<br />    generation_max_length=225,<br />    report_to=["tensorboard"],<br />    metric_for_best_model="wer",<br />    greater_is_better=False,<br />)<br /><br /># Initialize Trainer<br />trainer = Seq2SeqTrainer(<br />    args=training_args,<br />    model=model,<br />    train_dataset=processed_dataset["train"],<br />    eval_dataset=processed_dataset["test"],<br />    data_collator=data_collator,<br />    compute_metrics=compute_metrics,<br />    tokenizer=processor.feature_extractor,<br />)<br /><br />trainer.train()<br />``` [14, 31, 35, 40]<br /><br />## Summary of Findings and Recommendations<br /><br />The NVIDIA DGX Spark represents a formidable platform for the development of localized ASR systems. Its unique Grace Blackwell architecture bridges the gap between desktop workstations and enterprise supercomputers, providing the necessary unified memory to handle state-of-the-art multilingual models.[1, 4, 5]<br /><br />For the specific task of English, Hindi, and Hinglish transcription:<br />- **Model Choice**: The **Whisper-Hindi2Hinglish-Apex** model is the premier choice due to its targeted fine-tuning on noisy Indian accents and successful ranking in Hinglish benchmarks.<br />- **Infrastructure**: Rebuilding the software stack for **sm_121** and **ARM64** is non-negotiable for maximizing the Blackwell GPU's performance potential.<br />- **Data Utilization**: Leveraging the **HiACC** dataset is essential for ensuring robustness across age groups, particularly for child speakers whose speech patterns often cause significant WER spikes in traditional models.<br />- **Scaling**: While a single Spark unit is powerful, its high-performance **ConnectX-7** networking allows for stacking units to double the parameter-handling capacity, should the user scale to 400B+ parameter models in the future.<br /><br />By adhering to the structured file systems and optimized training protocols detailed in this report, developers can successfully build and deploy highly accurate Hinglish ASR systems locally on the DGX Spark hardware.[2, 23]<br /></p><h4>Works cited</h4><ol><li>NVIDIA DGX Spark AI Supercomputer | PNY Pro, accessed on December 19, 2025, <a href="https://www.pny.com/dgx-spark">https://www.pny.com/dgx-spark</a></li><li>NVIDIA DGX™ Spark Founders Edition | AI and High Performance Computing - Leadtek, accessed on December 19, 2025, <a href="https://www.leadtek.com/eng/products/ai_hpc(37)/nvidia_dgx_spark_founders_edition(51035)/detail">https://www.leadtek.com/eng/products/ai_hpc(37)/nvidia_dgx_spark_founders_edition(51035)/detail</a></li><li>HiACC: Hinglish adult &amp; children code-switched corpus - Ulster University, accessed on December 19, 2025, <a href="https://pure.ulster.ac.uk/en/publications/hiacc-hinglish-adult-amp-children-code-switched-corpus/">https://pure.ulster.ac.uk/en/publications/hiacc-hinglish-adult-amp-children-code-switched-corpus/</a></li><li>NVIDIA DGX Spark; 20 core Arm, 10 Cortex-X925 + 10 Cortex-A725 Arm; 128GB LPDDR5x Unified RAM; 4TB Solid State Drive - Micro Center, accessed on December 19, 2025, <a href="https://www.microcenter.com/product/699008/nvidia-dgx-spark">https://www.microcenter.com/product/699008/nvidia-dgx-spark</a></li><li>A Grace Blackwell AI supercomputer on your desk | NVIDIA DGX Spark, accessed on December 19, 2025, <a href="https://www.nvidia.com/en-us/products/workstations/dgx-spark/">https://www.nvidia.com/en-us/products/workstations/dgx-spark/</a></li><li>Hardware Overview — DGX Spark User Guide, accessed on December 19, 2025, <a href="https://docs.nvidia.com/dgx/dgx-spark/hardware.html">https://docs.nvidia.com/dgx/dgx-spark/hardware.html</a></li><li>Oriserve/Whisper-Hindi2Hinglish-Apex · Hugging Face, accessed on December 19, 2025, <a href="https://huggingface.co/Oriserve/Whisper-Hindi2Hinglish-Apex">https://huggingface.co/Oriserve/Whisper-Hindi2Hinglish-Apex</a></li><li>Setup and Build Systems — NVIDIA DGX Spark Porting Guide, accessed on December 19, 2025, <a href="https://docs.nvidia.com/dgx/dgx-spark-porting-guide/porting/compilation.html">https://docs.nvidia.com/dgx/dgx-spark-porting-guide/porting/compilation.html</a></li><li>Optimising NVIDIA's DGX Spark (Grace + Blackwell) – 1.5× PyTorch speedup with custom build : r/LocalLLaMA - Reddit, accessed on December 19, 2025, <a href="https://www.reddit.com/r/LocalLLaMA/comments/1p7ddv3/optimising_nvidias_dgx_spark_grace_blackwell_15/">https://www.reddit.com/r/LocalLLaMA/comments/1p7ddv3/optimising_nvidias_dgx_spark_grace_blackwell_15/</a></li><li>NVIDIA DGX Spark: great hardware, early days for the ecosystem, accessed on December 19, 2025, <a href="https://simonwillison.net/2025/Oct/14/nvidia-dgx-spark/">https://simonwillison.net/2025/Oct/14/nvidia-dgx-spark/</a></li><li>Adapting Whisper for low-resource Hindi-English Code-Mix speech with on-the-fly Augmentation &amp; LLM-Synthesised Data - ISCA Archive, accessed on December 19, 2025, <a href="https://www.isca-archive.org/interspeech_2025/biswas25_interspeech.pdf">https://www.isca-archive.org/interspeech_2025/biswas25_interspeech.pdf</a></li><li>Oriserve/Whisper-Hindi2Hinglish-Prime - Hugging Face, accessed on December 19, 2025, <a href="https://huggingface.co/Oriserve/Whisper-Hindi2Hinglish-Prime">https://huggingface.co/Oriserve/Whisper-Hindi2Hinglish-Prime</a></li><li>Advancing Multilingual Speech Recognition: Fine-Tuning Whisper for Enhanced Low-Resource Performance | by Christopher Ibe | Medium, accessed on December 19, 2025, <a href="https://medium.com/@ccibeekeoc42/advancing-multilingual-speech-recognition-fine-tuning-whisper-for-enhanced-low-resource-34529b525f90">https://medium.com/@ccibeekeoc42/advancing-multilingual-speech-recognition-fine-tuning-whisper-for-enhanced-low-resource-34529b525f90</a></li><li>Fine-tune Whisper models on Amazon SageMaker with LoRA | Artificial Intelligence - AWS, accessed on December 19, 2025, <a href="https://aws.amazon.com/blogs/machine-learning/fine-tune-whisper-models-on-amazon-sagemaker-with-lora/">https://aws.amazon.com/blogs/machine-learning/fine-tune-whisper-models-on-amazon-sagemaker-with-lora/</a></li><li>Oriserve/Whisper-Hindi2Hinglish-Swift - Hugging Face, accessed on December 19, 2025, <a href="https://huggingface.co/Oriserve/Whisper-Hindi2Hinglish-Swift">https://huggingface.co/Oriserve/Whisper-Hindi2Hinglish-Swift</a></li><li>Whisper Hindi Small · Models - Dataloop, accessed on December 19, 2025, <a href="https://dataloop.ai/library/model/vasista22_whisper-hindi-small/">https://dataloop.ai/library/model/vasista22_whisper-hindi-small/</a></li><li>NGC — DGX Spark User Guide - NVIDIA Documentation, accessed on December 19, 2025, <a href="https://docs.nvidia.com/dgx/dgx-spark/ngc.html">https://docs.nvidia.com/dgx/dgx-spark/ngc.html</a></li><li>Initial Setup - First Boot — DGX Spark User Guide, accessed on December 19, 2025, <a href="https://docs.nvidia.com/dgx/dgx-spark/first-boot.html">https://docs.nvidia.com/dgx/dgx-spark/first-boot.html</a></li><li>Installation Guide - Hugging Face, accessed on December 19, 2025, <a href="https://huggingface.co/docs/bitsandbytes/main/installation">https://huggingface.co/docs/bitsandbytes/main/installation</a></li><li>bitsandbytes - PyPI, accessed on December 19, 2025, <a href="https://pypi.org/project/bitsandbytes/">https://pypi.org/project/bitsandbytes/</a></li><li>aarch64 whl in PyPi · Issue #1437 · bitsandbytes-foundation/bitsandbytes - GitHub, accessed on December 19, 2025, <a href="https://github.com/bitsandbytes-foundation/bitsandbytes/issues/1437">https://github.com/bitsandbytes-foundation/bitsandbytes/issues/1437</a></li><li>audio dataset - Zenodo, accessed on December 19, 2025, <a href="https://zenodo.org/records/14675126">https://zenodo.org/records/14675126</a></li><li>sanket-poojary-03/Fine-tuning-Whisper: Fine tuning ... - GitHub, accessed on December 19, 2025, <a href="https://github.com/sanket-poojary-03/Fine-tuning-Whisper">https://github.com/sanket-poojary-03/Fine-tuning-Whisper</a></li><li>HiACC: Hinglish adult &amp; children code-switched corpus, accessed on December 19, 2025, <a href="https://pure.ulster.ac.uk/files/224502270/1-s2.0-S2352340925006109-main.pdf">https://pure.ulster.ac.uk/files/224502270/1-s2.0-S2352340925006109-main.pdf</a></li><li>Breaking language barriers: Fine-tuning Whisper for Hindi - Collabora, accessed on December 19, 2025, <a href="https://www.collabora.com/news-and-blog/news-and-events/breaking-language-barriers-fine-tuning-whisper-for-hindi.html">https://www.collabora.com/news-and-blog/news-and-events/breaking-language-barriers-fine-tuning-whisper-for-hindi.html</a></li><li>Languages - Common Voice - Mozilla, accessed on December 19, 2025, <a href="https://commonvoice.mozilla.org/en/languages">https://commonvoice.mozilla.org/en/languages</a></li><li>Dataset Card for Common Voice Corpus 11.0 - 人工智能, accessed on December 19, 2025, <a href="https://www.atyun.com/datasets/info/mozilla-foundation/common_voice_11_0.html?lang=en">https://www.atyun.com/datasets/info/mozilla-foundation/common_voice_11_0.html?lang=en</a></li><li>IITG-HingCoS Corpus: A Hinglish Code-Switching Database for Automatic Speech Recognition | Request PDF - ResearchGate, accessed on December 19, 2025, <a href="https://www.researchgate.net/publication/332487906_IITG-HingCoS_Corpus_A_Hinglish_Code-Switching_Database_for_Automatic_Speech_Recognition">https://www.researchgate.net/publication/332487906_IITG-HingCoS_Corpus_A_Hinglish_Code-Switching_Database_for_Automatic_Speech_Recognition</a></li><li>Abhishekcr448/Hinglish-Everyday-Conversations-1M · Datasets at Hugging Face, accessed on December 19, 2025, <a href="https://huggingface.co/datasets/Abhishekcr448/Hinglish-Everyday-Conversations-1M">https://huggingface.co/datasets/Abhishekcr448/Hinglish-Everyday-Conversations-1M</a></li><li>HiACC: Hinglish adult &amp; children code-switched corpus - PubMed, accessed on December 19, 2025, <a href="https://pubmed.ncbi.nlm.nih.gov/40778380/">https://pubmed.ncbi.nlm.nih.gov/40778380/</a></li><li>Vaibhavs10/fast-whisper-finetuning - GitHub, accessed on December 19, 2025, <a href="https://github.com/Vaibhavs10/fast-whisper-finetuning">https://github.com/Vaibhavs10/fast-whisper-finetuning</a></li><li>fengredrum/finetune-whisper-lora: Fine-Tune Whisper with Transformers and PEFT - GitHub, accessed on December 19, 2025, <a href="https://github.com/fengredrum/finetune-whisper-lora">https://github.com/fengredrum/finetune-whisper-lora</a></li><li>Everything you need to know about fine-tuning an ASR: a focus on Whisper - Diabolocom, accessed on December 19, 2025, <a href="https://www.diabolocom.com/research/fine-tuning-asr-focus-on-whisper/">https://www.diabolocom.com/research/fine-tuning-asr-focus-on-whisper/</a></li></ol>
+    </article>
+    
+    <script>
+        // Enable text search highlighting
+        window.highlightText = function(searchTerm) {
+            if (!searchTerm) return;
+            
+            const content = document.querySelector('.document-content');
+            const walker = document.createTreeWalker(
+                content,
+                NodeFilter.SHOW_TEXT,
+                null,
+                false
+            );
+            
+            const textNodes = [];
+            while(walker.nextNode()) textNodes.push(walker.currentNode);
+            
+            textNodes.forEach(node => {
+                if (node.nodeValue.toLowerCase().includes(searchTerm.toLowerCase())) {
+                    const span = document.createElement('span');
+                    span.innerHTML = node.nodeValue.replace(
+                        new RegExp('(' + searchTerm + ')', 'gi'),
+                        '<mark class="search-highlight">$1</mark>'
+                    );
+                    node.parentNode.replaceChild(span, node);
+                }
+            });
+        };
+        
+        // Scroll to element with matching text
+        window.scrollToText = function(text) {
+            const content = document.querySelector('.document-content');
+            const marks = content.querySelectorAll('.search-highlight');
+            if (marks.length > 0) {
+                marks[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        };
+    </script>
+</body>
+</html>
