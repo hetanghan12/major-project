@@ -49,6 +49,9 @@ const xlsxPreviewRoutes = require('./routes/xlsx-preview.routes');
 // MFA Routes - Two-Factor Authentication with Google Authenticator
 const mfaRoutes = require('./routes/mfa.routes');
 
+// Admin Routes - System-wide management
+const adminRoutes = require('./routes/admin.routes');
+
 // Error handler middleware
 const { errorHandler } = require('./middlewares/error.middleware');
 
@@ -603,6 +606,7 @@ app.get('/api/status', async (req, res) => {
   res.json(report);
 });
 
+
 app.get('/api/health', (req, res) => {
   res.redirect('/api/status');
 });
@@ -767,6 +771,11 @@ app.use('/api/xlsx', xlsxPreviewRoutes);
 // NOTE: Actual TOTP enrollment/verification happens on frontend via Firebase SDK
 //
 app.use('/api/auth/mfa', mfaRoutes);
+
+// =============================================================================
+// ADMIN ROUTES (SYSTEM MANAGEMENT)
+// =============================================================================
+app.use('/api/admin', adminRoutes);
 
 // =============================================================================
 // THUMBNAIL ROUTE - Google Drive-style document previews

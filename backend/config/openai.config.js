@@ -65,7 +65,11 @@ async function generateEmbedding(text) {
     }
 
     console.log(`   ✅ Generated embedding: ${embedding.length} dimensions`);
-    return embedding;
+    return {
+        embedding,
+        usage: response.usage,
+        model: EMBEDDING_MODEL
+    };
 }
 
 /**
@@ -94,7 +98,11 @@ async function generateEmbeddings(texts) {
     }
 
     console.log(`   ✅ Generated ${embeddings.length} embeddings: ${EXPECTED_DIMENSION} dimensions each`);
-    return embeddings;
+    return {
+        embeddings,
+        usage: response.usage,
+        model: EMBEDDING_MODEL
+    };
 }
 
 /**
@@ -127,7 +135,11 @@ Please provide a helpful answer based only on the context above.`;
         max_tokens: 1000
     });
 
-    return response.choices[0].message.content;
+    return {
+        answer: response.choices[0].message.content,
+        usage: response.usage, // Contains prompt_tokens, completion_tokens, total_tokens
+        model: 'gpt-3.5-turbo'
+    };
 }
 
 module.exports = {

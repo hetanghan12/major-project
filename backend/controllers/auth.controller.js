@@ -15,14 +15,17 @@ const { asyncHandler, ApiError } = require('../middlewares/error.middleware');
  * POST /api/auth/verify
  */
 const verifyToken = asyncHandler(async (req, res) => {
-    // User info is attached by verifyFirebaseToken middleware
-    const { uid, email, emailVerified, name, picture } = req.user;
+    const { uid, email, name, picture, emailVerified } = req.user;
+    // Check if this is the admin email
+    const adminEmail = process.env.ADMIN_EMAIL || 'admin@cloudspace.com';
+    const role = email === adminEmail ? 'Admin' : 'User';
 
     // Create or update user profile in Firestore
     const userProfile = await createOrUpdateUser(uid, {
         email,
         displayName: name,
-        photoURL: picture
+        photoURL: picture,
+        role: role
     });
 
     res.json({
@@ -136,14 +139,16 @@ const createTestUser = asyncHandler(async (req, res) => {
  */
 const syncUser = asyncHandler(async (req, res) => {
     const { uid, email, name, picture } = req.user;
-
-    console.log(`🔄 Syncing user: ${email} (${uid})`);
+    // Check if this is the admin email
+    const adminEmail = process.env.ADMIN_EMAIL || 'admin@cloudspace.com';
+    const role = email === adminEmail ? 'Admin' : 'User';
 
     // Update user profile in Firestore
     const userProfile = await createOrUpdateUser(uid, {
         email,
         displayName: name,
-        photoURL: picture
+        photoURL: picture,
+        role: role
     });
 
     // Initialize/verify user's Pinecone namespace

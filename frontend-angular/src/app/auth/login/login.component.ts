@@ -402,6 +402,20 @@ export class LoginComponent {
       } else if (result.user) {
         // Login successful (no MFA)
         console.log('✅ Login successful (no MFA)');
+        
+        // SYNC USER ROLE BEFORE REDIRECTING
+        // This ensures Admins go to /admin/dashboard directly without hitting the user dashboard first
+        try {
+          const syncResponse = await this.authService.syncUserWithBackend();
+          if (syncResponse && syncResponse.user?.role === 'Admin') {
+            console.log('👨‍💼 Admin detected, redirecting to admin panel');
+            this.router.navigateByUrl('/admin/dashboard');
+            return;
+          }
+        } catch (syncError) {
+          console.error('Role sync failed during login:', syncError);
+        }
+
         this.router.navigateByUrl(this.returnUrl);
       }
     } catch (err: any) {
@@ -431,6 +445,19 @@ export class LoginComponent {
     try {
       await this.authService.verifyTotpDuringLogin(this.mfaResolver, this.mfaCode);
       console.log('✅ MFA verification successful');
+
+      // SYNC USER ROLE BEFORE REDIRECTING
+      try {
+        const syncResponse = await this.authService.syncUserWithBackend();
+        if (syncResponse && syncResponse.user?.role === 'Admin') {
+          console.log('👨‍💼 Admin detected (MFA), redirecting to admin panel');
+          this.router.navigateByUrl('/admin/dashboard');
+          return;
+        }
+      } catch (syncError) {
+        console.error('Role sync failed during MFA:', syncError);
+      }
+
       this.router.navigateByUrl(this.returnUrl);
     } catch (err: any) {
       this.error.set(err.message || 'Verification failed');
@@ -460,6 +487,19 @@ export class LoginComponent {
     try {
       await this.authService.loginWithGoogle();
       console.log('✅ Google login successful');
+
+      // SYNC USER ROLE BEFORE REDIRECTING
+      try {
+        const syncResponse = await this.authService.syncUserWithBackend();
+        if (syncResponse && syncResponse.user?.role === 'Admin') {
+          console.log('👨‍💼 Admin detected (Google), redirecting to admin panel');
+          this.router.navigateByUrl('/admin/dashboard');
+          return;
+        }
+      } catch (syncError) {
+        console.error('Role sync failed during Google login:', syncError);
+      }
+
       this.router.navigateByUrl(this.returnUrl);
     } catch (err: any) {
       console.error('Expected error if popup closed:', err);

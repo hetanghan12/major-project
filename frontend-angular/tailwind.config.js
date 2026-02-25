@@ -3,6 +3,9 @@ module.exports = {
     content: [
         "./src/**/*.{html,ts}",
     ],
+    safelist: [
+        { pattern: /^(bg|text|border)-(emerald|blue|purple|amber)-(100|400|500|700)$/ }
+    ],
     theme: {
         extend: {
             colors: {

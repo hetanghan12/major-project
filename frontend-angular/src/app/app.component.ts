@@ -19,13 +19,27 @@ import { FormsModule } from '@angular/forms';
   standalone: true,
   imports: [CommonModule, RouterOutlet, RouterLink, RouterLinkActive, FormsModule],
   template: `
-    <!-- Auth pages (no sidebar) -->
-    <ng-container *ngIf="!authService.isAuthenticated()">
+    <!-- Global Loading Splash -->
+    <div *ngIf="authService.isLoading()" class="fixed inset-0 z-[100] bg-white dark:bg-slate-900 flex flex-col items-center justify-center">
+      <div class="sidebar-logo-icon w-16 h-16 mb-6 animate-bounce bg-indigo-600 flex items-center justify-center rounded-2xl shadow-xl shadow-indigo-500/20">
+        <svg class="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"/>
+        </svg>
+      </div>
+      <div class="flex items-center gap-2">
+        <div class="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-pulse"></div>
+        <div class="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-pulse [animation-delay:200ms]"></div>
+        <div class="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-pulse [animation-delay:400ms]"></div>
+      </div>
+    </div>
+
+    <!-- Auth pages or Admin routes (no main sidebar) -->
+    <ng-container *ngIf="!authService.isLoading() && (!authService.isAuthenticated() || isAuthRoute() || isAdminRoute())">
       <router-outlet></router-outlet>
     </ng-container>
 
-    <!-- Main app with sidebar -->
-    <div *ngIf="authService.isAuthenticated()" class="app-layout" [attr.data-theme]="theme()">
+    <!-- Main app with sidebar (Regular user routes ONLY) -->
+    <div *ngIf="!authService.isLoading() && authService.isAuthenticated() && !isAdminRoute() && !isAuthRoute()" class="app-layout" [attr.data-theme]="theme()">
       
       <!-- Mobile Overlay -->
       <div *ngIf="mobileOpen()" 
@@ -57,27 +71,36 @@ import { FormsModule } from '@angular/forms';
           </button>
         </div>
 
-        <!-- 2. Menu (Scrollable) -->
+        <!-- 2. Navigation Items -->
         <nav class="sidebar-nav">
           <a routerLink="/dashboard" 
              routerLinkActive="active" 
-             [routerLinkActiveOptions]="{exact: true}"
-             class="sidebar-nav-item dashboard-item"
-             (click)="mobileOpen.set(false)">
-            <div class="sidebar-nav-icon-container bg-white/20">
-               <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
-               </svg>
-            </div>
-            <span>Dashboard</span>
-          </a>
-          
-          <a routerLink="/documents" 
-             routerLinkActive="active" 
              class="sidebar-nav-item"
              (click)="mobileOpen.set(false)">
-            <svg class="sidebar-nav-icon text-yellow-500" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+             <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+             </svg>
+            <span>Dashboard</span>
+          </a>
+
+          <!-- ADMIN PANEL LINK - PROMINENT AT TOP -->
+          <a *ngIf="authService.currentUser()?.role === 'Admin' || authService.currentUser()?.email === 'admin@cloudspace.com'" 
+             routerLink="/admin/dashboard" 
+             routerLinkActive="active" 
+             class="sidebar-nav-item bg-red-50/50 border-l-4 border-red-500 rounded-none!"
+             (click)="mobileOpen.set(false)"
+             title="System Administration">
+             <svg class="sidebar-nav-icon text-red-600 font-bold" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+             </svg>
+            <span class="font-bold text-red-600 uppercase tracking-widest text-xs">Admin Control</span>
+          </a>
+
+          <a (click)="navigateToMyFiles(); mobileOpen.set(false)" 
+             class="sidebar-nav-item"
+             [class.active]="currentRoute === '/documents'">
+            <svg class="sidebar-nav-icon text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
             </svg>
             <span>My Files</span>
           </a>
@@ -139,11 +162,13 @@ import { FormsModule } from '@angular/forms';
             <span>Storage Insights</span>
           </a>
 
-          <a class="sidebar-nav-item" (click)="mobileOpen.set(false)">
-            <svg class="sidebar-nav-icon text-purple-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-            </svg>
+          <a (click)="navigateToSettings(); mobileOpen.set(false)" 
+             class="sidebar-nav-item"
+             [class.active]="currentRoute === '/settings'">
+             <svg class="sidebar-nav-icon text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+             </svg>
             <span>Settings</span>
           </a>
 
@@ -153,7 +178,6 @@ import { FormsModule } from '@angular/forms';
              </svg>
             <span>Plans</span>
           </a>
-
         </nav>
 
         <!-- 3. Footer (Fixed) -->
@@ -485,6 +509,15 @@ export class AppComponent implements OnInit {
   storagePercent = signal(0);
   usedStorage = signal('0 B');
 
+  isAdminRoute(): boolean {
+    return this.router.url.startsWith('/admin');
+  }
+
+  isAuthRoute(): boolean {
+    const url = this.router.url;
+    return url === '/login' || url === '/register' || url.startsWith('/login?');
+  }
+
   aiChatHistory = signal([
     { id: '1', title: 'Conversation 30/12/2025', date: 'Yesterday' },
   ]);
@@ -620,6 +653,14 @@ export class AppComponent implements OnInit {
 
   toggleAIPanel(): void {
     this.showAIPanel.set(!this.showAIPanel());
+  }
+
+  navigateToMyFiles(): void {
+    this.router.navigate(['/documents']);
+  }
+
+  navigateToSettings(): void {
+    this.router.navigate(['/settings/security']);
   }
 
   onSearch(): void {

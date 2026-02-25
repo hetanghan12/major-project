@@ -83,9 +83,19 @@ async function queryDirectly(res, userId, question) {
         const context = buildContext(searchResults);
 
         // Step 3: Generate AI response
-        const answer = await generateResponse(question, context);
+        const { answer, usage, model } = await generateResponse(question, context);
 
-        // Step 4: Extract unique source documents
+        // Step 4: Log AI usage in background
+        const { logAIUsage, calculateEstimatedCost } = require('../services/logging.service');
+        logAIUsage({
+            userId,
+            model,
+            type: 'CHAT',
+            usage,
+            cost: calculateEstimatedCost(model, usage)
+        }).catch(e => console.error('Background log failed:', e));
+
+        // Step 5: Extract unique source documents
         const sources = [...new Set(searchResults.map(r => r.fileName))];
 
         console.log(`   ✅ Response generated from ${sources.length} source(s)`);
@@ -94,6 +104,7 @@ async function queryDirectly(res, userId, question) {
             success: true,
             answer,
             sources,
+            usage, // Include usage in response for debugging/UI if needed
             metadata: {
                 matchCount: searchResults.length,
                 topScore: searchResults[0]?.score || 0

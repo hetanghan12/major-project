@@ -34,6 +34,7 @@ async function createOrUpdateUser(userId, userData) {
         email: userData.email,
         displayName: userData.displayName || null,
         photoURL: userData.photoURL || null,
+        role: userData.role || 'User', // Default role
         updatedAt: new Date().toISOString(),
         ...(!userData.createdAt && { createdAt: new Date().toISOString() })
     };

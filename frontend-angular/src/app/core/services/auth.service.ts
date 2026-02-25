@@ -3,11 +3,6 @@
  * ========================
  * Handles Firebase Authentication operations including MFA (Multi-Factor Authentication).
  * 
- * MFA Features:
- * - TOTP enrollment (Google Authenticator compatible)
- * - MFA verification during login
- * - MFA status checking and unenrollment
- * 
  * @author CloudAI Team
  */
 
@@ -33,6 +28,7 @@ import {
     signInWithPopup
 } from 'firebase/auth';
 import { environment } from '../../../environments/environment';
+import { firstValueFrom } from 'rxjs';
 
 // User interface
 export interface AppUser {
@@ -41,6 +37,22 @@ export interface AppUser {
     displayName: string | null;
     photoURL: string | null;
     emailVerified: boolean;
+    role?: string;
+}
+
+// Backend Response interface
+export interface BackendUserSyncResponse {
+    success: boolean;
+    message: string;
+    user: {
+        userId: string;
+        email: string;
+        displayName: string | null;
+        photoURL: string | null;
+        role: string;
+        createdAt: string;
+        updatedAt: string;
+    };
 }
 
 // MFA-related interfaces
@@ -114,12 +126,20 @@ export class AuthService {
     private setupAuthListener(): void {
         onAuthStateChanged(this.auth, async (user) => {
             if (user) {
-                this._currentUser.set(this.mapFirebaseUser(user));
+                const appUser = this.mapFirebaseUser(user);
+                this._currentUser.set(appUser);
                 this._token.set(await user.getIdToken());
 
-                // Sync with backend
+                // Sync with backend to get extra fields like 'role'
                 try {
-                    await this.syncUserWithBackend();
+                    const response = await this.syncUserWithBackend();
+                    if (response && response.success) {
+                        this._currentUser.set({
+                            ...appUser,
+                            role: response.user?.role || 'User'
+                        });
+                        console.log('✅ User synced with role:', response.user?.role);
+                    }
                 } catch (error) {
                     console.error('Failed to sync user with backend:', error);
                 }
@@ -140,7 +160,8 @@ export class AuthService {
             email: user.email,
             displayName: user.displayName,
             photoURL: user.photoURL,
-            emailVerified: user.emailVerified
+            emailVerified: user.emailVerified,
+            role: 'User'
         };
     }
 
@@ -159,7 +180,7 @@ export class AuthService {
     }
 
     /**
-     * Login with email and password (basic - no MFA handling)
+     * Login with email and password
      */
     async login(email: string, password: string): Promise<AppUser> {
         try {
@@ -187,13 +208,8 @@ export class AuthService {
         }
     }
 
-    // ==========================================================================
-    // MFA (MULTI-FACTOR AUTHENTICATION) METHODS
-    // ==========================================================================
-
     /**
      * Login with MFA support
-     * Returns either a successful user or indicates MFA is required
      */
     async loginWithMfa(email: string, password: string): Promise<MfaLoginResult> {
         try {
@@ -202,9 +218,7 @@ export class AuthService {
             this._currentUser.set(user);
             return { user };
         } catch (error: any) {
-            // Check if MFA is required
             if (error.code === 'auth/multi-factor-auth-required') {
-                console.log('🔐 MFA required for login');
                 const resolver = getMultiFactorResolver(this.auth, error as MultiFactorError);
                 return { mfaRequired: true, resolver };
             }
@@ -217,31 +231,15 @@ export class AuthService {
      */
     async verifyTotpDuringLogin(resolver: MultiFactorResolver, verificationCode: string): Promise<AppUser> {
         try {
-            // Find TOTP hint
             const totpHint = resolver.hints.find(hint => hint.factorId === 'totp');
+            if (!totpHint) throw new Error('TOTP factor not found.');
 
-            if (!totpHint) {
-                throw new Error('TOTP factor not found. Please contact support.');
-            }
-
-            // Create assertion for sign-in
-            const multiFactorAssertion = TotpMultiFactorGenerator.assertionForSignIn(
-                totpHint.uid,
-                verificationCode
-            );
-
-            // Complete the sign-in
+            const multiFactorAssertion = TotpMultiFactorGenerator.assertionForSignIn(totpHint.uid, verificationCode);
             const credential = await resolver.resolveSignIn(multiFactorAssertion);
             const user = this.mapFirebaseUser(credential.user);
             this._currentUser.set(user);
-
-            console.log('✅ MFA verification successful');
             return user;
         } catch (error: any) {
-            console.error('❌ MFA verification failed:', error);
-            if (error.code === 'auth/invalid-verification-code') {
-                throw new Error('Invalid verification code. Please try again.');
-            }
             throw this.handleAuthError(error);
         }
     }
@@ -252,72 +250,51 @@ export class AuthService {
     async checkMfaStatus(): Promise<boolean> {
         const user = this.auth.currentUser;
         if (!user) return false;
-
-        const mfaInfo = multiFactor(user);
-        return mfaInfo.enrolledFactors.length > 0;
+        return multiFactor(user).enrolledFactors.length > 0;
     }
 
     /**
-     * Start TOTP enrollment - returns QR code URL and secret
+     * Start TOTP enrollment
      */
     async startTotpEnrollment(): Promise<MfaEnrollmentResult> {
         const user = this.auth.currentUser;
-        if (!user) {
-            throw new Error('User not authenticated');
-        }
-
+        if (!user) throw new Error('User not authenticated');
         try {
-            // Get MFA session
             const mfaSession = await multiFactor(user).getSession();
-
-            // Generate TOTP secret
             const totpSecret = await TotpMultiFactorGenerator.generateSecret(mfaSession);
-
-            // Generate QR code URL for authenticator apps
-            const qrCodeUrl = totpSecret.generateQrCodeUrl(
-                user.email || 'User',
-                'CloudAI Document Vault'
-            );
-
-            console.log('🔐 TOTP enrollment started - QR code generated');
-
+            const qrCodeUrl = totpSecret.generateQrCodeUrl(user.email || 'User', 'CloudSpace');
             return { qrCodeUrl, secret: totpSecret };
         } catch (error: any) {
-            console.error('❌ Failed to start TOTP enrollment:', error);
-            throw new Error('Failed to start 2FA setup. Please try again.');
+            throw new Error('Failed to start 2FA setup.');
         }
     }
 
     /**
-     * Complete TOTP enrollment with verification code
+     * Complete TOTP enrollment
      */
-    async completeTotpEnrollment(
-        secret: TotpSecret,
-        verificationCode: string,
-        displayName: string = 'Google Authenticator'
-    ): Promise<void> {
+    async completeTotpEnrollment(secret: TotpSecret, verificationCode: string, displayName: string = 'Authenticator'): Promise<void> {
         const user = this.auth.currentUser;
-        if (!user) {
-            throw new Error('User not authenticated');
-        }
-
+        if (!user) throw new Error('User not authenticated');
         try {
-            // Generate multi-factor assertion for enrollment
-            const multiFactorAssertion = TotpMultiFactorGenerator.assertionForEnrollment(
-                secret,
-                verificationCode
-            );
-
-            // Enroll the TOTP factor
+            const multiFactorAssertion = TotpMultiFactorGenerator.assertionForEnrollment(secret, verificationCode);
             await multiFactor(user).enroll(multiFactorAssertion, displayName);
-
-            console.log('✅ TOTP enrollment completed successfully');
         } catch (error: any) {
-            console.error('❌ TOTP enrollment failed:', error);
-            if (error.code === 'auth/invalid-verification-code') {
-                throw new Error('Invalid verification code. Please try again.');
-            }
-            throw new Error('Failed to complete 2FA setup. Please try again.');
+            throw this.handleAuthError(error);
+        }
+    }
+
+    /**
+     * Unenroll MFA factor
+     */
+    async unenrollMfa(factorUid: string): Promise<void> {
+        const user = this.auth.currentUser;
+        if (!user) throw new Error('User not authenticated');
+        try {
+            const mfaInfo = multiFactor(user);
+            const factor = mfaInfo.enrolledFactors.find(f => f.uid === factorUid);
+            if (factor) await mfaInfo.unenroll(factor);
+        } catch (error: any) {
+            throw new Error('Failed to remove 2FA.');
         }
     }
 
@@ -336,36 +313,7 @@ export class AuthService {
     }
 
     /**
-     * Unenroll a specific MFA factor
-     */
-    async unenrollMfa(factorUid: string): Promise<void> {
-        const user = this.auth.currentUser;
-        if (!user) {
-            throw new Error('User not authenticated');
-        }
-
-        const mfaInfo = multiFactor(user);
-        const factor = mfaInfo.enrolledFactors.find(f => f.uid === factorUid);
-
-        if (!factor) {
-            throw new Error('MFA factor not found');
-        }
-
-        try {
-            await mfaInfo.unenroll(factor);
-            console.log('🗑️ MFA factor unenrolled successfully');
-        } catch (error: any) {
-            console.error('❌ Failed to unenroll MFA:', error);
-            throw new Error('Failed to remove 2FA. Please try again.');
-        }
-    }
-
-    // ==========================================================================
-    // END MFA METHODS
-    // ==========================================================================
-
-    /**
-     * Logout current user
+     * Logout
      */
     async logout(): Promise<void> {
         try {
@@ -378,19 +326,18 @@ export class AuthService {
     }
 
     /**
-     * Sync user data with backend
+     * Sync user with backend
      */
-    private async syncUserWithBackend(): Promise<void> {
+    public async syncUserWithBackend(): Promise<BackendUserSyncResponse | null> {
         const token = await this.getToken();
-        if (!token) return;
-
-        await this.http.post(`${environment.apiUrl}/auth/sync`, {}, {
+        if (!token) return null;
+        return await firstValueFrom(this.http.post<BackendUserSyncResponse>(`${environment.apiUrl}/auth/sync`, {}, {
             headers: { Authorization: `Bearer ${token}` }
-        }).toPromise();
+        }));
     }
 
     /**
-     * Handle Firebase auth errors
+     * Handle Auth Errors
      */
     private handleAuthError(error: any): Error {
         const errorMessages: { [key: string]: string } = {
@@ -398,15 +345,8 @@ export class AuthService {
             'auth/wrong-password': 'Incorrect password',
             'auth/email-already-in-use': 'Email is already registered',
             'auth/invalid-email': 'Invalid email format',
-            'auth/weak-password': 'Password is too weak (min 6 characters)',
-            'auth/too-many-requests': 'Too many attempts. Please try again later.',
-            'auth/network-request-failed': 'Network error. Please check your connection.',
-            'auth/invalid-credential': 'Invalid credentials. Please check your email and password.',
-            'auth/multi-factor-auth-required': 'Two-factor authentication required',
-            'auth/invalid-verification-code': 'Invalid verification code'
+            'auth/invalid-verification-code': 'Invalid 2FA code'
         };
-
-        const message = errorMessages[error.code] || error.message || 'An error occurred';
-        return new Error(message);
+        return new Error(errorMessages[error.code] || error.message || 'An error occurred');
     }
 }

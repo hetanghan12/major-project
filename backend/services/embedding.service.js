@@ -49,13 +49,23 @@ async function processAndStoreEmbeddings(userId, documentId, fileName, chunks) {
             const batch = texts.slice(i, i + batchSize);
             console.log(`   📊 Generating embeddings: batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(texts.length / batchSize)} (${batch.length} texts)`);
 
-            const embeddings = await generateEmbeddings(batch);
-            console.log(`   ✅ Got ${embeddings.length} embeddings`);
+            const { embeddings: batchEmbeddings, usage, model } = await generateEmbeddings(batch);
+            console.log(`   ✅ Got ${batchEmbeddings.length} embeddings`);
+
+            // Log embedding usage in background
+            const { logAIUsage, calculateEstimatedCost } = require('./logging.service');
+            logAIUsage({ 
+                userId, 
+                model, 
+                type: 'DOCUMENT_PROCESSING', 
+                usage, 
+                cost: calculateEstimatedCost(model, usage) 
+            }).catch(e => console.error('Background log failed:', e));
 
             // Create vector objects with metadata
-            for (let j = 0; j < embeddings.length; j++) {
+            for (let j = 0; j < batchEmbeddings.length; j++) {
                 const chunkIndex = i + j;
-                const embedding = embeddings[j];
+                const embedding = batchEmbeddings[j];
 
                 // CRITICAL: Verify dimension
                 if (embedding.length !== EXPECTED_DIM) {
@@ -127,12 +137,16 @@ async function searchDocuments(userId, query, topK = 5) {
 
     try {
         // Generate embedding for the query
-        const queryEmbedding = await generateEmbedding(query);
+        const { embedding, usage, model } = await generateEmbedding(query);
 
         // Query Pinecone with user namespace
-        const results = await queryVectors(userId, queryEmbedding, topK);
+        const results = await queryVectors(userId, embedding, topK);
 
         console.log(`   ✅ Found ${results.length} relevant chunks`);
+
+        // TODO: Log embedding usage if needed (userId is available here)
+        // const { logAIUsage, calculateEstimatedCost } = require('./logging.service');
+        // logAIUsage({ userId, model, type: 'EMBEDDING', usage, cost: calculateEstimatedCost(model, usage) });
 
         return results.map(match => ({
             score: match.score,
