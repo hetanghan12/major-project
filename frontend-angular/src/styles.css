@@ -131,7 +131,9 @@
   
   .bg-white input, 
   .bg-white select, 
-  .bg-white textarea {
+  .bg-white textarea,
+  .bg-white button,
+  .bg-white button * {
     color: #0f172a !important;
   }
 }
