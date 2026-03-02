@@ -4,7 +4,7 @@
  * System overview with real Firestore stats, charts and activity feed.
  */
 
-import { Component, OnInit, inject, signal, computed } from '@angular/core';
+import { Component, OnInit, OnDestroy, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { AdminService } from '../../core/services/admin.service';
 
@@ -101,15 +101,18 @@ import { AdminService } from '../../core/services/admin.service';
             </div>
             <div class="h-52 flex items-end gap-2 border-b border-slate-100 pb-1">
               <div *ngFor="let v of stats()!.growth; let i = index"
-                   class="flex-1 rounded-t-md bg-indigo-500 hover:bg-indigo-600 transition-all cursor-default relative group"
+                   class="flex-1 rounded-t-md transition-all cursor-default relative group"
+                   [class.bg-indigo-500]="v > 0"
+                   [class.hover:bg-indigo-600]="v > 0"
+                   [class.bg-slate-100]="v === 0"
                    [style.height.%]="growthH(v)">
                 <div class="absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] px-2 py-0.5 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                  {{ fmt(v) }}
+                  {{ v > 0 ? fmt(v) : 'No uploads' }}
                 </div>
               </div>
             </div>
             <div class="flex justify-between mt-3 text-[10px] text-slate-400 font-medium uppercase">
-              <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
+              <span *ngFor="let d of getDayLabels()">{{ d }}</span>
             </div>
           </div>
 
@@ -161,12 +164,21 @@ import { AdminService } from '../../core/services/admin.service';
     .stat-trend { font-size:.7rem; margin-top:.2rem; }
   `]
 })
-export class AdminDashboardComponent implements OnInit {
+export class AdminDashboardComponent implements OnInit, OnDestroy {
   private svc = inject(AdminService);
   stats   = this.svc.stats;
   loading = signal(true);
+  private _refreshInterval: any;
 
-  ngOnInit() { this.load(); }
+  ngOnInit() {
+    this.load();
+    // Auto-refresh every 30s so new users/uploads appear without manual refresh
+    this._refreshInterval = setInterval(() => this.svc.loadStats(), 30000);
+  }
+
+  ngOnDestroy() {
+    if (this._refreshInterval) clearInterval(this._refreshInterval);
+  }
 
   async load() {
     this.loading.set(true);
@@ -188,7 +200,18 @@ export class AdminDashboardComponent implements OnInit {
 
   growthH(v: number) {
     const max = Math.max(...(this.stats()?.growth ?? [1]), 1);
-    return Math.max(Math.round((v / max) * 100), 2);
+    if (v === 0) return 3; // minimum visible height for zero days
+    return Math.max(Math.round((v / max) * 100), 5);
+  }
+
+  /** Returns the last 7 day abbreviations ending with today */
+  getDayLabels(): string[] {
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const today = new Date().getDay(); // 0=Sun, 1=Mon, ...
+    return Array.from({ length: 7 }, (_, i) => {
+      const dayIndex = (today - 6 + i + 7) % 7;
+      return days[dayIndex];
+    });
   }
 
   fmt(b: number) {

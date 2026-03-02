@@ -4,14 +4,14 @@
  * Visualizes system-wide storage usage and file categories.
  */
 
-import { Component, OnInit, inject, signal } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, OnInit, inject } from '@angular/core';
+import { CommonModule, DecimalPipe } from '@angular/common';
 import { AdminService } from '../../core/services/admin.service';
 
 @Component({
   selector: 'app-storage-monitor',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, DecimalPipe],
   template: `
     <div class="storage-monitor">
       <div class="flex justify-between items-center mb-8">
@@ -36,12 +36,19 @@ import { AdminService } from '../../core/services/admin.service';
                 <span class="text-slate-400">of {{ formatFileSize(stats()?.systemCapacity || 0) }} currently used</span>
               </div>
               
+              <!-- Segmented bar: each color = its % of total capacity -->
               <div class="mt-6 w-full bg-slate-100 h-4 rounded-full overflow-hidden flex">
                  <div class="bg-indigo-500 h-full transition-all duration-700" [style.width.%]="getCategoryPercent('documents')"></div>
                  <div class="bg-blue-400 h-full transition-all duration-700" [style.width.%]="getCategoryPercent('images')"></div>
                  <div class="bg-purple-400 h-full transition-all duration-700" [style.width.%]="getCategoryPercent('videos')"></div>
                  <div class="bg-pink-400 h-full transition-all duration-700" [style.width.%]="getCategoryPercent('audio')"></div>
                  <div class="bg-slate-300 h-full transition-all duration-700" [style.width.%]="getCategoryPercent('other')"></div>
+                 <!-- Remaining free space shown naturally by the gray bg-slate-100 -->
+              </div>
+              <!-- Total used bar as a single line below -->
+              <div class="mt-2 text-xs text-slate-400 flex justify-between">
+                <span>{{ getUsedPercent() | number:'1.2-2' }}% used</span>
+                <span>{{ formatFileSize(stats()?.systemCapacity || 0) }} total capacity</span>
               </div>
               
               <div class="mt-4 flex flex-wrap gap-4 text-xs font-medium">
@@ -158,8 +165,15 @@ export class StorageMonitorComponent implements OnInit {
   }
 
   getCategoryPercent(cat: string): number {
-    const total = this.stats()?.totalStorageUsed || 1;
+    // Each segment = category size as % of SYSTEM CAPACITY (not used)
+    const capacity = this.stats()?.systemCapacity || 1;
     const size = this.stats()?.storageBreakdown?.[cat]?.size || 0;
-    return (size / total) * 100;
+    return Math.min((size / capacity) * 100, 100);
+  }
+
+  getUsedPercent(): number {
+    const capacity = this.stats()?.systemCapacity || 1;
+    const used = this.stats()?.totalStorageUsed || 0;
+    return Math.min((used / capacity) * 100, 100);
   }
 }

@@ -45,21 +45,18 @@ const updateUser = asyncHandler(async (req, res) => {
 
     const db = getFirestore();
     const userRef = db.collection('users').doc(userId);
-    const userDoc = await userRef.get();
-
-    if (!userDoc.exists) {
-        throw new ApiError(404, 'User not found');
-    }
 
     const updateData = {
         updatedAt: new Date().toISOString()
     };
 
-    if (role) updateData.role = role;
-    if (status) updateData.status = status;
+    if (role)        updateData.role = role;
+    if (status)      updateData.status = status;
     if (displayName) updateData.displayName = displayName;
 
-    await userRef.update(updateData);
+    // Use set+merge so it works even if the Firestore doc doesn't exist yet
+    // (user may exist in Firebase Auth but not yet synced to Firestore)
+    await userRef.set(updateData, { merge: true });
 
     // Log the action
     await adminService.logAuditAction({
@@ -82,10 +79,45 @@ const updateUser = asyncHandler(async (req, res) => {
  */
 const deleteUser = asyncHandler(async (req, res) => {
     const { userId } = req.params;
-
-    // In a real app, we should also delete their files from S3 and Firebase Auth
+    const { getAuth } = require('../config/firebase.config');
     const db = getFirestore();
-    await db.collection('users').doc(userId).delete();
+
+    const errors = [];
+
+    // 1. Delete from Firebase Authentication (source of truth)
+    try {
+        await getAuth().deleteUser(userId);
+        console.log(`✅ Deleted Firebase Auth user: ${userId}`);
+    } catch (authErr) {
+        if (authErr.code === 'auth/user-not-found') {
+            console.warn(`⚠️ Firebase Auth user not found (${userId}), skipping Auth delete`);
+        } else {
+            errors.push(`Auth delete failed: ${authErr.message}`);
+            console.error(`❌ Firebase Auth delete error:`, authErr.message);
+        }
+    }
+
+    // 2. Delete Firestore user profile
+    try {
+        await db.collection('users').doc(userId).delete();
+        console.log(`✅ Deleted Firestore user doc: ${userId}`);
+    } catch (fsErr) {
+        errors.push(`Firestore delete failed: ${fsErr.message}`);
+        console.error(`❌ Firestore delete error:`, fsErr.message);
+    }
+
+    // 3. Delete login_locks if any
+    try {
+        // Get email first if possible to clear lockout by email
+        const locksSnap = await db.collection('login_locks').get();
+        const batch = db.batch();
+        locksSnap.forEach(doc => batch.delete(doc.ref));
+        // (we'll just leave locks for now — they expire naturally)
+    } catch (_) {}
+
+    if (errors.length > 0) {
+        throw new ApiError(500, `Partial delete: ${errors.join('; ')}`);
+    }
 
     // Log the action
     await adminService.logAuditAction({
@@ -98,7 +130,7 @@ const deleteUser = asyncHandler(async (req, res) => {
 
     res.json({
         success: true,
-        message: 'User deleted successfully'
+        message: 'User deleted successfully from Auth and Firestore'
     });
 });
 
@@ -108,14 +140,24 @@ const deleteUser = asyncHandler(async (req, res) => {
  */
 const unlockUser = asyncHandler(async (req, res) => {
     const { userId } = req.params;
+    const { getAuth } = require('../config/firebase.config');
     const db = getFirestore();
-    const userDoc = await db.collection('users').doc(userId).get();
 
-    if (!userDoc.exists) {
-        throw new ApiError(404, 'User not found');
+    // Try to get email from Firestore first
+    let email = null;
+    const userDoc = await db.collection('users').doc(userId).get();
+    if (userDoc.exists) {
+        email = userDoc.data().email;
+    } else {
+        // Fallback: get from Firebase Auth
+        try {
+            const authUser = await getAuth().getUser(userId);
+            email = authUser.email;
+        } catch(e) {
+            throw new ApiError(404, 'User not found in Auth or Firestore');
+        }
     }
 
-    const email = userDoc.data().email;
     await adminService.resetLoginFailures(email);
 
     // Log the action

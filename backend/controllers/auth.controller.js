@@ -168,6 +168,16 @@ const syncUser = asyncHandler(async (req, res) => {
     // Reset failed attempts on successful sync/login
     await adminService.resetLoginFailures(email);
 
+    // Log the login to audit trail so Recent Activity stays up to date
+    adminService.logAuditAction({
+        event: 'LOGIN_SUCCESS',
+        user: name || email,
+        userId: uid,
+        ipAddress: req.ip || 'unknown',
+        status: 'Success',
+        details: { role }
+    }).catch(() => {}); // fire-and-forget, don't block response
+
     res.json({
         success: true,
         message: 'User synced successfully',

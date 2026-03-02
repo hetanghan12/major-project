@@ -286,7 +286,6 @@ export class SystemSettingsComponent implements OnInit {
     { name: 'AWS S3',     desc: 'File Storage Bucket',    emoji: '☁️', bg: 'bg-yellow-50', connected: true  },
     { name: 'OpenAI',     desc: 'GPT-4o AI Assistant',    emoji: '🤖', bg: 'bg-emerald-50', connected: true },
     { name: 'Pinecone',   desc: 'Vector Search Index',    emoji: '🌲', bg: 'bg-green-50',  connected: true  },
-    { name: 'SendGrid',   desc: 'Transactional Email',    emoji: '✉️', bg: 'bg-blue-50',   connected: false },
   ];
 
   // Default form values — will be overwritten by Firestore data

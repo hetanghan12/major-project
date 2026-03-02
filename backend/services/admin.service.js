@@ -20,10 +20,36 @@ const SETTINGS_COLLECTION = 'system_settings';
 async function getDashboardStats() {
     try {
         const db = getFirestore();
+        const { getAuth } = require('../config/firebase.config');
 
-        // 1. Total Users
-        const userSnapshot = await db.collection(USERS_COLLECTION).count().get();
-        const totalUsers = userSnapshot.data().count;
+        // 1. Total Users — use Firebase Auth as source of truth
+        // This includes ALL users even if they haven't synced to Firestore yet
+        let totalUsers = 0;
+        try {
+            const authList = await getAuth().listUsers(1000);
+            totalUsers = authList.users.length;
+
+            // Auto-sync any Firebase Auth users missing from Firestore
+            const { createOrUpdateUser } = require('./firestore.service');
+            for (const authUser of authList.users) {
+                const firestoreDoc = await db.collection(USERS_COLLECTION).doc(authUser.uid).get();
+                if (!firestoreDoc.exists) {
+                    const adminEmail = process.env.ADMIN_EMAIL || 'admin@cloudspace.com';
+                    await createOrUpdateUser(authUser.uid, {
+                        email: authUser.email,
+                        displayName: authUser.displayName || authUser.email?.split('@')[0],
+                        photoURL: authUser.photoURL || null,
+                        role: authUser.email === adminEmail ? 'Admin' : 'User'
+                    });
+                    console.log(`✅ Auto-synced missing user: ${authUser.email}`);
+                }
+            }
+        } catch (authErr) {
+            // Fallback to Firestore collection count if Auth SDK fails
+            console.warn('⚠️ Auth.listUsers failed, falling back to Firestore count:', authErr.message);
+            const userSnapshot = await db.collection(USERS_COLLECTION).count().get();
+            totalUsers = userSnapshot.data().count;
+        }
         console.log(`📊 Admin Stats: Found ${totalUsers} total users`);
 
         // 2. Total Storage & Documents
@@ -129,16 +155,41 @@ async function getDashboardStats() {
         allLogs.sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
 
         const recentActivity = [];
-        let activeRequestsCount = 0;
-
         allLogs.forEach(data => {
             if (recentActivity.length < 15) {
                 recentActivity.push(data);
             }
-            if (data.timestamp > oneDayAgo) {
-                activeRequestsCount++;
-            }
         });
+
+        // 4. Active Users (24h) — count users whose lastSignInTime is within 24h
+        //    Uses Firebase Auth metadata so it's always accurate after any login
+        let activeRequestsCount = 0;
+        let newUsersToday = 0;
+        const startOfToday = new Date(now);
+        startOfToday.setHours(0, 0, 0, 0);
+
+        try {
+            // authList was already fetched above; reuse it
+            const authListForActive = await getAuth().listUsers(1000);
+            authListForActive.users.forEach(u => {
+                const lastSignIn = u.metadata?.lastSignInTime;
+                if (lastSignIn && new Date(lastSignIn) >= new Date(oneDayAgo)) {
+                    activeRequestsCount++;
+                }
+                const createdAt = u.metadata?.creationTime;
+                if (createdAt && new Date(createdAt) >= startOfToday) {
+                    newUsersToday++;
+                }
+            });
+        } catch (authErr) {
+            // Fallback: count audit log entries
+            allLogs.forEach(data => {
+                if (data.timestamp > oneDayAgo) activeRequestsCount++;
+            });
+        }
+
+        const userTrend = newUsersToday > 0 ? `+${newUsersToday}` : '+0';
+        console.log(`📊 Active users (24h via Firebase Auth): ${activeRequestsCount}, New today: ${newUsersToday}`);
 
         const limit = 10 * 1024 * 1024 * 1024; // 10GB
         const storagePercent = Math.min(Math.round((totalStorageUsed / limit) * 100), 100);
@@ -155,7 +206,7 @@ async function getDashboardStats() {
             recentActivity,
             recentFiles,
             systemCapacity: limit,
-            userTrend: '+2'
+            userTrend
         };
 
         console.log(`✅ Admin Stats generated: ${documentCount} files, ${totalStorageUsed} bytes`);
@@ -289,44 +340,60 @@ async function getAnalyticsStats() {
  */
 async function getAllUsers(options = {}) {
     const db = getFirestore();
+    const { getAuth } = require('../config/firebase.config');
+
+    // Step 1: Get all Firebase Auth users (source of truth)
+    let authUsers = [];
+    try {
+        const authList = await getAuth().listUsers(1000);
+        authUsers = authList.users;
+    } catch (e) {
+        console.warn('⚠️ Could not list Firebase Auth users:', e.message);
+    }
+
+    // Step 2: Get all Firestore user profiles
     let query = db.collection(USERS_COLLECTION);
-
-    if (options.role) {
-        query = query.where('role', '==', options.role);
-    }
-
-    if (options.status) {
-        query = query.where('status', '==', options.status);
-    }
-
+    if (options.role)   query = query.where('role', '==', options.role);
+    if (options.status) query = query.where('status', '==', options.status);
     const snapshot = await query.get();
+
+    // Build a map of uid -> Firestore data
+    const firestoreMap = {};
+    snapshot.forEach(doc => {
+        firestoreMap[doc.id] = { id: doc.id, ...doc.data() };
+    });
+
+    // Step 3: Get lockout info
     const locksSnapshot = await db.collection('login_locks').get();
-    
-    // Map of email -> lock info
     const locksMap = {};
     locksSnapshot.forEach(doc => {
         locksMap[doc.id] = doc.data();
     });
 
-    const users = [];
-    snapshot.forEach(doc => {
-        const userData = doc.data();
-        const lockInfo = locksMap[userData.email];
-        
+    // Step 4: Merge — every Firebase Auth user appears, with Firestore data overlaid
+    const adminEmail = process.env.ADMIN_EMAIL || 'admin@cloudspace.com';
+    const users = authUsers.map(authUser => {
+        const fsData = firestoreMap[authUser.uid] || {};
+        const email = authUser.email || fsData.email || '';
+        const lockInfo = locksMap[email];
+
         let isLocked = false;
         if (lockInfo?.lockedUntil && new Date(lockInfo.lockedUntil) > new Date()) {
             isLocked = true;
         }
 
-        users.push({ 
-            id: doc.id, 
-            ...userData,
-            lockout: lockInfo ? {
-                isLocked,
-                failures: lockInfo.failures || 0,
-                lockedUntil: lockInfo.lockedUntil || null
-            } : null
-        });
+        return {
+            id: authUser.uid,
+            email,
+            displayName: fsData.displayName || authUser.displayName || email.split('@')[0],
+            photoURL: fsData.photoURL || authUser.photoURL || null,
+            role: fsData.role || (email === adminEmail ? 'Admin' : 'User'),
+            status: fsData.status || 'Active',
+            createdAt: fsData.createdAt || authUser.metadata?.creationTime || null,
+            lastLogin: fsData.lastLogin || authUser.metadata?.lastSignInTime || null,
+            storageUsed: fsData.storageUsed || 0,
+            lockout: lockInfo ? { isLocked, failures: lockInfo.failures || 0, lockedUntil: lockInfo.lockedUntil || null } : null
+        };
     });
 
     return users;
