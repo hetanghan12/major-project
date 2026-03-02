@@ -51,14 +51,6 @@ import { FormsModule } from '@angular/forms';
 
         <div class="flex gap-3">
           <select class="px-4 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  [ngModel]="roleFilter()"
-                  (ngModelChange)="roleFilter.set($event)">
-            <option value="">All Roles</option>
-            <option value="Admin">Admin</option>
-            <option value="User">User</option>
-          </select>
-
-          <select class="px-4 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   [ngModel]="statusFilter()"
                   (ngModelChange)="statusFilter.set($event)">
             <option value="">All Statuses</option>
@@ -234,16 +226,6 @@ import { FormsModule } from '@angular/forms';
             <input type="email" [(ngModel)]="editForm.email"
                    class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                    placeholder="user@example.com">
-          </div>
-
-          <!-- Role -->
-          <div>
-            <label class="block text-xs font-bold text-slate-600 uppercase mb-1.5">Role</label>
-            <select [(ngModel)]="editForm.role"
-                    class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-              <option value="User">User</option>
-              <option value="Admin">Admin</option>
-            </select>
           </div>
 
           <!-- Status -->
