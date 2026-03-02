@@ -116,17 +116,18 @@ import { FormsModule } from '@angular/forms';
                 {{ user.createdAt | date:'mediumDate' }}
               </td>
               <td class="px-6 py-4 text-right">
+                <div class="flex justify-end gap-2">
                   <button *ngIf="user.lockout?.isLocked" (click)="onUnlock(user.id)" class="p-2 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg text-emerald-500 hover:text-emerald-700 transition-colors" title="Unlock User">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"/>
                     </svg>
                   </button>
-                  <button class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-gray-400 hover:text-indigo-600 transition-colors" title="Edit">
+                  <button class="p-2 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-indigo-600 transition-colors" title="Edit">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
                     </svg>
                   </button>
-                  <button class="p-2 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-gray-400 hover:text-red-600 transition-colors" title="Delete" (click)="onDelete(user.id)">
+                  <button class="p-2 hover:bg-red-50 rounded-lg text-gray-400 hover:text-red-600 transition-colors" title="Delete" (click)="onDelete(user.id)">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
                     </svg>
@@ -147,22 +148,26 @@ import { FormsModule } from '@angular/forms';
   `,
   styles: [`
     :host { display: block; }
-    .user-row:hover {
-      background-color: #f8fafc !important;
+    .user-row {
+      background-color: white !important;
     }
-    .user-row p, .user-row span {
-      color: #1e293b !important; /* Force deep slate for readability */
+    .user-row:hover {
+      background-color: #f1f5f9 !important; /* light slate hover */
+    }
+    .user-row td, 
+    .user-row p, 
+    .user-row span,
+    .user-row div {
+      color: #0f172a !important; /* Force black text */
     }
     .user-row .text-gray-500 {
-      color: #64748b !important; /* Slightly lighter for secondary info */
+      color: #475569 !important; /* Slightly lighter but still dark */
     }
-    /* Indicator for locked users stays red regardless */
-    .user-row .text-red-600 {
-      color: #dc2626 !important;
-    }
-    .user-row .text-green-500 {
-      color: #10b981 !important;
-    }
+    /* Status indicators should keep their colors */
+    .user-row .text-green-500 { color: #10b981 !important; }
+    .user-row .text-red-500 { color: #ef4444 !important; }
+    .user-row .text-red-600 { color: #dc2626 !important; }
+    .user-row .bg-red-50 { background-color: #fef2f2 !important; }
   `]
 })
 export class UserManagementComponent implements OnInit {
