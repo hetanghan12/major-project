@@ -9,7 +9,7 @@
 const express = require('express');
 const router = express.Router();
 
-const { verifyToken, getProfile, createTestUser, syncUser } = require('../controllers/auth.controller');
+const { verifyToken, getProfile, createTestUser, syncUser, recordFailure, checkLockout } = require('../controllers/auth.controller');
 const { verifyFirebaseToken } = require('../middlewares/auth.middleware');
 
 /**
@@ -41,5 +41,19 @@ router.post('/sync', verifyFirebaseToken, syncUser);
  * ⚠️ WARNING: This endpoint is for TESTING/DEMO purposes only!
  */
 router.post('/create-test-user', createTestUser);
+
+/**
+ * @route   POST /api/auth/fail
+ * @desc    Record a failed login attempt
+ * @access  Public
+ */
+router.post('/fail', recordFailure);
+
+/**
+ * @route   GET /api/auth/lockout-status/:email
+ * @desc    Check if a user is locked out
+ * @access  Public
+ */
+router.get('/lockout-status/:email', checkLockout);
 
 module.exports = router;

@@ -15,6 +15,7 @@ const {
     getUsers, 
     updateUser, 
     deleteUser, 
+    unlockUser,
     getLogs, 
     getSettings, 
     updateSettings,
@@ -41,6 +42,7 @@ router.get('/analytics', getAnalytics);
 router.get('/users', getUsers);
 router.put('/users/:userId', updateUser);
 router.delete('/users/:userId', deleteUser);
+router.post('/users/:userId/unlock', unlockUser);
 
 // Audit Logs
 router.get('/audit-logs', getLogs);

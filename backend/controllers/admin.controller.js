@@ -103,6 +103,37 @@ const deleteUser = asyncHandler(async (req, res) => {
 });
 
 /**
+ * Unlock a user manually
+ * POST /api/admin/users/:userId/unlock
+ */
+const unlockUser = asyncHandler(async (req, res) => {
+    const { userId } = req.params;
+    const db = getFirestore();
+    const userDoc = await db.collection('users').doc(userId).get();
+
+    if (!userDoc.exists) {
+        throw new ApiError(404, 'User not found');
+    }
+
+    const email = userDoc.data().email;
+    await adminService.resetLoginFailures(email);
+
+    // Log the action
+    await adminService.logAuditAction({
+        event: 'USER_UNLOCK',
+        user: req.user.email,
+        userId: req.user.uid,
+        ipAddress: req.ip,
+        details: { targetUserId: userId, targetEmail: email }
+    });
+
+    res.json({
+        success: true,
+        message: `User ${email} has been unlocked successfully`
+    });
+});
+
+/**
  * Get Audit Logs
  * GET /api/admin/audit-logs
  */
@@ -219,6 +250,7 @@ module.exports = {
     getUsers,
     updateUser,
     deleteUser,
+    unlockUser,
     getLogs,
     getSettings,
     updateSettings,

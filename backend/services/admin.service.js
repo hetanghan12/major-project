@@ -300,9 +300,33 @@ async function getAllUsers(options = {}) {
     }
 
     const snapshot = await query.get();
+    const locksSnapshot = await db.collection('login_locks').get();
+    
+    // Map of email -> lock info
+    const locksMap = {};
+    locksSnapshot.forEach(doc => {
+        locksMap[doc.id] = doc.data();
+    });
+
     const users = [];
     snapshot.forEach(doc => {
-        users.push({ id: doc.id, ...doc.data() });
+        const userData = doc.data();
+        const lockInfo = locksMap[userData.email];
+        
+        let isLocked = false;
+        if (lockInfo?.lockedUntil && new Date(lockInfo.lockedUntil) > new Date()) {
+            isLocked = true;
+        }
+
+        users.push({ 
+            id: doc.id, 
+            ...userData,
+            lockout: lockInfo ? {
+                isLocked,
+                failures: lockInfo.failures || 0,
+                lockedUntil: lockInfo.lockedUntil || null
+            } : null
+        });
     });
 
     return users;
@@ -534,6 +558,74 @@ async function getAIUsageMetrics() {
     }
 }
 
+/**
+ * Increment failed login attempts for an email/IP
+ */
+async function incrementLoginFailures(email, ip) {
+    const db = getFirestore();
+    const settings = await getSettings();
+    const maxAttempts = settings.maxLoginAttempts || 5;
+
+    const lockRef = db.collection('login_locks').doc(email);
+    const doc = await lockRef.get();
+    
+    let failures = 1;
+    if (doc.exists) {
+        failures = (doc.data().failures || 0) + 1;
+    }
+
+    const payload = {
+        email,
+        failures,
+        lastFailure: new Date().toISOString(),
+        ip: ip || 'unknown'
+    };
+
+    if (failures >= maxAttempts) {
+        payload.lockedUntil = new Date(Date.now() + (settings.sessionTimeout || 60) * 60 * 1000).toISOString();
+        console.log(`🔒 Account LOCKED: ${email} (reached ${failures} attempts)`);
+    }
+
+    await lockRef.set(payload, { merge: true });
+    return payload;
+}
+
+/**
+ * Reset login failures for an email
+ */
+async function resetLoginFailures(email) {
+    const db = getFirestore();
+    await db.collection('login_locks').doc(email).delete();
+    console.log(`🔓 Login failures reset for: ${email}`);
+}
+
+/**
+ * Check if a user is currently locked out
+ */
+async function getLockoutStatus(email) {
+    const db = getFirestore();
+    const doc = await db.collection('login_locks').doc(email).get();
+    
+    if (!doc.exists) return { locked: false, attempts: 0 };
+    
+    const data = doc.data();
+    if (data.lockedUntil) {
+        if (new Date(data.lockedUntil) > new Date()) {
+            return { 
+                locked: true, 
+                lockedUntil: data.lockedUntil,
+                attempts: data.failures
+            };
+        } else {
+            // Lock expired
+            await resetLoginFailures(email);
+            return { locked: false, attempts: 0 };
+        }
+    }
+    
+    return { locked: false, attempts: data.failures };
+}
+
 module.exports = {
     getDashboardStats,
     getAllUsers,
@@ -543,5 +635,8 @@ module.exports = {
     getSettings,
     getSubscriptionPlans,
     getAIUsageMetrics,
-    getAnalyticsStats
+    getAnalyticsStats,
+    incrementLoginFailures,
+    resetLoginFailures,
+    getLockoutStatus
 };

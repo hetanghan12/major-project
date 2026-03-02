@@ -122,6 +122,18 @@
   ::-webkit-scrollbar-thumb:hover {
     background: rgba(156, 163, 175, 0.6);
   }
+
+  /* Fix for text visibility in white containers (modals/cards) regardless of dark mode */
+  .bg-white, .bg-white * {
+    --text-primary: #0f172a !important;
+    --text-secondary: #475569 !important;
+  }
+  
+  .bg-white input, 
+  .bg-white select, 
+  .bg-white textarea {
+    color: #0f172a !important;
+  }
 }
 
 /* Component styles */

@@ -136,6 +136,18 @@ export class AdminService {
         }
     }
 
+    async unlockUser(userId: string): Promise<boolean> {
+        try {
+            const response: any = await firstValueFrom(
+                this.http.post(`${this.apiUrl}/users/${userId}/unlock`, {})
+            );
+            return !!response?.success;
+        } catch (error: any) {
+            console.error('[AdminService] unlockUser error:', error?.error?.message || error?.message);
+            return false;
+        }
+    }
+
     // -------------------------------------------------------------------------
     // Audit Logs
     // -------------------------------------------------------------------------

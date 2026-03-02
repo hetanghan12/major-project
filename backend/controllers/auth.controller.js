@@ -9,6 +9,7 @@
 const { getAuth } = require('../config/firebase.config');
 const { createOrUpdateUser, getUser } = require('../services/firestore.service');
 const { asyncHandler, ApiError } = require('../middlewares/error.middleware');
+const adminService = require('../services/admin.service');
 
 /**
  * Verify Firebase ID token and return user info
@@ -164,6 +165,9 @@ const syncUser = asyncHandler(async (req, res) => {
         console.log(`   ⚠️ User can still use the app, namespace will be created on first document upload`);
     }
 
+    // Reset failed attempts on successful sync/login
+    await adminService.resetLoginFailures(email);
+
     res.json({
         success: true,
         message: 'User synced successfully',
@@ -176,9 +180,42 @@ const syncUser = asyncHandler(async (req, res) => {
     });
 });
 
+/**
+ * Record a failed login attempt
+ * POST /api/auth/record-failure
+ */
+const recordFailure = asyncHandler(async (req, res) => {
+    const { email } = req.body;
+    if (!email) throw new ApiError(400, 'Email is required');
+
+    const result = await adminService.incrementLoginFailures(email, req.ip);
+    
+    res.json({
+        success: true,
+        locked: result.failures >= (await adminService.getSettings()).maxLoginAttempts,
+        attempts: result.failures
+    });
+});
+
+/**
+ * Check lockout status before letting user try to login
+ * GET /api/auth/lockout-status/:email
+ */
+const checkLockout = asyncHandler(async (req, res) => {
+    const { email } = req.params;
+    const status = await adminService.getLockoutStatus(email);
+    
+    res.json({
+        success: true,
+        ...status
+    });
+});
+
 module.exports = {
     verifyToken,
     getProfile,
     createTestUser,
-    syncUser
+    syncUser,
+    recordFailure,
+    checkLockout
 };

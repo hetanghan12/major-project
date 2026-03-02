@@ -169,12 +169,21 @@ export class AuthService {
      * Register a new user
      */
     async register(email: string, password: string): Promise<AppUser> {
+        // First check if email is locked out
+        const lockout = await this.checkLockoutStatus(email);
+        if (lockout && lockout.locked) {
+            throw new Error(`Account temporarily locked. Try again after ${new Date(lockout.lockedUntil).toLocaleTimeString()}`);
+        }
+
         try {
             const credential = await createUserWithEmailAndPassword(this.auth, email, password);
             const user = this.mapFirebaseUser(credential.user);
             this._currentUser.set(user);
             return user;
         } catch (error: any) {
+            if (error.code === 'auth/wrong-password') {
+                await this.recordLoginFailure(email);
+            }
             throw this.handleAuthError(error);
         }
     }
@@ -183,12 +192,21 @@ export class AuthService {
      * Login with email and password
      */
     async login(email: string, password: string): Promise<AppUser> {
+        // First check if email is locked out
+        const lockout = await this.checkLockoutStatus(email);
+        if (lockout && lockout.locked) {
+            throw new Error(`Account temporarily locked. Try again after ${new Date(lockout.lockedUntil).toLocaleTimeString()}`);
+        }
+
         try {
             const credential = await signInWithEmailAndPassword(this.auth, email, password);
             const user = this.mapFirebaseUser(credential.user);
             this._currentUser.set(user);
             return user;
         } catch (error: any) {
+            if (error.code === 'auth/wrong-password') {
+                await this.recordLoginFailure(email);
+            }
             throw this.handleAuthError(error);
         }
     }
@@ -212,12 +230,21 @@ export class AuthService {
      * Login with MFA support
      */
     async loginWithMfa(email: string, password: string): Promise<MfaLoginResult> {
+        // First check if email is locked out
+        const lockout = await this.checkLockoutStatus(email);
+        if (lockout && lockout.locked) {
+            throw new Error(`Account temporarily locked. Try again after ${new Date(lockout.lockedUntil).toLocaleTimeString()}`);
+        }
+
         try {
             const credential = await signInWithEmailAndPassword(this.auth, email, password);
             const user = this.mapFirebaseUser(credential.user);
             this._currentUser.set(user);
             return { user };
         } catch (error: any) {
+            if (error.code === 'auth/wrong-password') {
+                await this.recordLoginFailure(email);
+            }
             if (error.code === 'auth/multi-factor-auth-required') {
                 const resolver = getMultiFactorResolver(this.auth, error as MultiFactorError);
                 return { mfaRequired: true, resolver };
@@ -345,8 +372,27 @@ export class AuthService {
             'auth/wrong-password': 'Incorrect password',
             'auth/email-already-in-use': 'Email is already registered',
             'auth/invalid-email': 'Invalid email format',
-            'auth/invalid-verification-code': 'Invalid 2FA code'
+            'auth/invalid-verification-code': 'Invalid 2FA code',
+            'auth/too-many-requests': 'Account temporarily disabled due to too many failed attempts. (Firebase Check)'
         };
         return new Error(errorMessages[error.code] || error.message || 'An error occurred');
+    }
+
+    /**
+     * Check if user is locked out on the backend
+     */
+    private async checkLockoutStatus(email: string): Promise<any> {
+        try {
+            return await firstValueFrom(this.http.get(`${environment.apiUrl}/auth/lockout-status/${email}`));
+        } catch (e) { return null; }
+    }
+
+    /**
+     * Record a failure on the backend
+     */
+    private async recordLoginFailure(email: string): Promise<void> {
+        try {
+            await firstValueFrom(this.http.post(`${environment.apiUrl}/auth/fail`, { email }));
+        } catch (e) { }
     }
 }

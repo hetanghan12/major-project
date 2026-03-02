@@ -10,6 +10,7 @@
  */
 
 const { getAuth } = require('../config/firebase.config');
+const { getLockoutStatus } = require('../services/admin.service');
 
 
 /**
@@ -52,10 +53,20 @@ async function verifyFirebaseToken(req, res, next) {
             });
         }
 
-        // Verify the token with Firebase
         const auth = getAuth();
         const decodedToken = await auth.verifyIdToken(idToken);
         console.log(`[AUTH] Token verified for UID: ${decodedToken.uid}`);
+
+        // Check for lockout
+        const lockout = await getLockoutStatus(decodedToken.email);
+        if (lockout.locked) {
+            console.log(`[AUTH] Blocked access for locked user: ${decodedToken.email}`);
+            return res.status(403).json({
+                success: false,
+                message: `Your account is temporarily locked. Try again after ${new Date(lockout.lockedUntil).toLocaleTimeString()}`,
+                locked: true
+            });
+        }
 
         // Attach user information to request object
         req.user = {

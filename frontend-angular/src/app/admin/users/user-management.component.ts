@@ -106,12 +106,21 @@ import { FormsModule } from '@angular/forms';
                   <span class="w-1.5 h-1.5 rounded-full bg-current"></span>
                   {{ user.status || 'Active' }}
                 </span>
+                <!-- Lockout Status -->
+                <div *ngIf="user.lockout?.isLocked" class="mt-1 flex items-center gap-1 text-[10px] text-red-600 font-bold bg-red-50 px-1.5 py-0.5 rounded border border-red-100 w-fit">
+                  <svg class="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a5 5 0 00-5 5v2a2 2 0 00-2 2v5a2 2 0 002 2h10a2 2 0 002-2v-5a2 2 0 00-2-2V7a5 5 0 00-5-5zM7 7a3 3 0 116 0v2H7V7z"/></svg>
+                  LOCKED
+                </div>
               </td>
               <td class="px-6 py-4 text-sm text-gray-500">
                 {{ user.createdAt | date:'mediumDate' }}
               </td>
               <td class="px-6 py-4 text-right">
-                <div class="flex justify-end gap-2">
+                  <button *ngIf="user.lockout?.isLocked" (click)="onUnlock(user.id)" class="p-2 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg text-emerald-500 hover:text-emerald-700 transition-colors" title="Unlock User">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"/>
+                    </svg>
+                  </button>
                   <button class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-gray-400 hover:text-indigo-600 transition-colors" title="Edit">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
@@ -183,6 +192,15 @@ export class UserManagementComponent implements OnInit {
   async onDelete(userId: string) {
     if (confirm('Are you sure you want to delete this user? This action cannot be undone.')) {
       const success = await this.adminService.deleteUser(userId);
+      if (success) {
+        this.adminService.loadUsers();
+      }
+    }
+  }
+
+  async onUnlock(userId: string) {
+    if (confirm('Manually unlock this user? They will be able to attempt login immediately.')) {
+      const success = await this.adminService.unlockUser(userId);
       if (success) {
         this.adminService.loadUsers();
       }

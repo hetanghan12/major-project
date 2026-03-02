@@ -55,9 +55,10 @@ import { AdminService } from '../../core/services/admin.service';
               <div class="space-y-5 max-w-xl">
 
                 <div>
-                  <label class="block text-xs font-bold text-slate-400 uppercase mb-1.5">System / Platform Name</label>
+                  <label class="block text-xs font-bold text-slate-600 uppercase mb-1.5">System / Platform Name</label>
                   <input type="text" [(ngModel)]="form.systemName"
-                         class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                         class="w-full px-4 py-2.5 rounded-xl border border-slate-300 text-sm text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                         style="color: black !important; background-color: white !important;"
                          placeholder="e.g. Cloud Space">
                 </div>
 
@@ -65,13 +66,15 @@ import { AdminService } from '../../core/services/admin.service';
                   <label class="block text-xs font-bold text-slate-400 uppercase mb-1.5">Support / Admin Email</label>
                   <input type="email" [(ngModel)]="form.adminEmail"
                          class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                         style="color: black !important;"
                          placeholder="admin@example.com">
                 </div>
 
                 <div>
-                  <label class="block text-xs font-bold text-slate-400 uppercase mb-1.5">Max File Upload Size (MB)</label>
+                  <label class="block text-xs font-bold text-slate-600 uppercase mb-1.5">Max File Upload Size (MB)</label>
                   <input type="number" [(ngModel)]="form.maxFileSizeMB" min="1" max="5000"
-                         class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                         class="w-full px-4 py-2.5 rounded-xl border border-slate-300 text-sm text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                         style="color: black !important; background-color: white !important;"
                          placeholder="500">
                 </div>
 
@@ -137,14 +140,16 @@ import { AdminService } from '../../core/services/admin.service';
               <h3 class="font-bold text-slate-900 mb-6 pb-3 border-b border-slate-100">Security Settings</h3>
               <div class="space-y-5 max-w-xl">
                 <div>
-                  <label class="block text-xs font-bold text-slate-400 uppercase mb-1.5">Session Timeout (minutes)</label>
+                  <label class="block text-xs font-bold text-slate-600 uppercase mb-1.5">Session Timeout (minutes)</label>
                   <input type="number" [(ngModel)]="form.sessionTimeout" min="5" max="1440"
-                         class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                         class="w-full px-4 py-2.5 rounded-xl border border-slate-300 text-sm text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                         style="color: black !important; background-color: white !important;">
                 </div>
                 <div>
-                  <label class="block text-xs font-bold text-slate-400 uppercase mb-1.5">Max Login Attempts</label>
+                  <label class="block text-xs font-bold text-slate-600 uppercase mb-1.5">Max Login Attempts</label>
                   <input type="number" [(ngModel)]="form.maxLoginAttempts" min="1" max="20"
-                         class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                         class="w-full px-4 py-2.5 rounded-xl border border-slate-300 text-sm text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                         style="color: black !important; background-color: white !important;">
                 </div>
                 <div class="flex items-center justify-between py-3 border-t border-slate-100">
                   <div>
@@ -236,7 +241,20 @@ import { AdminService } from '../../core/services/admin.service';
       </div>
     </div>
   `,
-  styles: [`:host { display: block; }`]
+  styles: [`
+    :host { display: block; }
+    input { 
+      color: black !important; 
+      background-color: white !important; 
+    }
+    label { 
+      color: #334155 !important; 
+      font-weight: 700 !important;
+    }
+    h3 {
+      color: #0f172a !important;
+    }
+  `]
 })
 export class SystemSettingsComponent implements OnInit {
   private adminService = inject(AdminService);

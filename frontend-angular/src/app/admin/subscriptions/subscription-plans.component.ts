@@ -96,13 +96,13 @@ import { AdminService } from '../../core/services/admin.service';
           <!-- Name -->
           <div>
             <label class="block text-sm font-semibold text-slate-700 mb-1.5">Plan Name</label>
-            <input [(ngModel)]="form.name" type="text" class="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent" placeholder="e.g. Professional">
+            <input [(ngModel)]="form.name" type="text" class="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent" style="color: black !important;" placeholder="e.g. Professional">
           </div>
 
           <!-- Description -->
           <div>
             <label class="block text-sm font-semibold text-slate-700 mb-1.5">Description</label>
-            <input [(ngModel)]="form.description" type="text" class="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent" placeholder="Short plan description">
+            <input [(ngModel)]="form.description" type="text" class="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent" style="color: black !important;" placeholder="Short plan description">
           </div>
 
           <!-- Price -->
@@ -110,7 +110,7 @@ import { AdminService } from '../../core/services/admin.service';
             <label class="block text-sm font-semibold text-slate-700 mb-1.5">Monthly Price (INR)</label>
             <div class="relative">
               <span class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">₹</span>
-              <input [(ngModel)]="form.price" type="number" min="0" class="w-full pl-8 pr-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent" placeholder="0">
+              <input [(ngModel)]="form.price" type="number" min="0" class="w-full pl-8 pr-4 py-3 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent" style="color: black !important;" placeholder="0">
             </div>
             <p class="text-[11px] text-slate-400 mt-1">Set to 0 for a free plan</p>
           </div>
@@ -119,7 +119,8 @@ import { AdminService } from '../../core/services/admin.service';
           <div>
             <label class="block text-sm font-semibold text-slate-700 mb-1.5">Features (one per line)</label>
             <textarea [(ngModel)]="featuresText" rows="6"
-              class="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none font-mono"
+              class="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none font-mono"
+              style="color: black !important;"
               placeholder="5 GB Storage
 Basic AI Assistant
 Email Support"></textarea>
@@ -160,7 +161,17 @@ Email Support"></textarea>
       </div>
     </div>
   `,
-  styles: [`:host { display: block; }`]
+  styles: [`
+    :host { display: block; }
+    input, textarea { 
+      color: black !important; 
+      background-color: white !important; 
+    }
+    label { 
+      color: #334155 !important; 
+      font-weight: 700 !important;
+    }
+  `]
 })
 export class SubscriptionPlansComponent implements OnInit {
   adminService  = inject(AdminService);
