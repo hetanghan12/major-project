@@ -462,7 +462,17 @@ async function getAIUsageMetrics() {
             const type = data.type || 'unknown';
             const tokens = data.usage?.total_tokens || 0;
             const cost = data.cost || 0;
-            const timestamp = data.createdAt ? data.createdAt.toDate() : new Date(data.timestamp);
+            // Safe timestamp conversion (handles both Firestore Timestamps and ISO strings)
+            let timestamp;
+            if (data.createdAt && typeof data.createdAt.toDate === 'function') {
+                timestamp = data.createdAt.toDate();
+            } else if (data.createdAt) {
+                timestamp = new Date(data.createdAt);
+            } else if (data.timestamp) {
+                timestamp = new Date(data.timestamp);
+            } else {
+                timestamp = new Date();
+            }
 
             // Model aggregation
             if (!modelStats[model]) {
@@ -514,7 +524,13 @@ async function getAIUsageMetrics() {
         };
     } catch (error) {
         console.error('❌ Error in getAIUsageMetrics:', error);
-        return { breakdown: [], models: [], trend: [], error: error.message };
+        return { 
+            breakdown: [], 
+            models: [], 
+            trend: [], 
+            stats: { totalCalls: 0, totalTokens: 0, totalCost: 0 },
+            error: error.message 
+        };
     }
 }
 
@@ -526,5 +542,6 @@ module.exports = {
     updateSettings,
     getSettings,
     getSubscriptionPlans,
-    getAIUsageMetrics
+    getAIUsageMetrics,
+    getAnalyticsStats
 };

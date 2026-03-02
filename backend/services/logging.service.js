@@ -5,7 +5,7 @@
  * Stores data in Firestore under the 'ai_usage' collection.
  */
 
-const { getFirestore } = require('firebase-admin/firestore');
+const { getFirestore } = require('../config/firebase.config');
 
 /**
  * Log AI Usage
@@ -45,13 +45,24 @@ async function logAIUsage(usageData) {
  * @returns {number} Estimated cost in USD
  */
 function calculateEstimatedCost(model, usage) {
-    // Current OpenAI rates (approximate)
+    // Current AI rates (approximate USD per token)
     const rates = {
-        'gpt-3.5-turbo': { prompt: 0.0000005, completion: 0.0000015 }, // $0.50 / 1M input, $1.50 / 1M output
-        'text-embedding-3-large': { prompt: 0.00000013, completion: 0 } // $0.13 / 1M tokens
+        'gpt-3.5-turbo': { prompt: 0.0000005, completion: 0.0000015 },
+        'gpt-4':         { prompt: 0.00003,   completion: 0.00006   },
+        'gpt-4o':        { prompt: 0.000005,  completion: 0.000015  },
+        'claude-3-sonnet': { prompt: 0.000003, completion: 0.000015 },
+        'text-embedding-3-large': { prompt: 0.00000013, completion: 0 }
     };
 
-    const rate = rates[model] || { prompt: 0, completion: 0 };
+    // Use specific rate or a safe default (like gpt-3.5 rates)
+    let rate = rates[model];
+    
+    // Fuzzy matching for n8n or generic model names
+    if (!rate) {
+        if (model.includes('gpt-4')) rate = rates['gpt-4o'];
+        else if (model.includes('gpt-3')) rate = rates['gpt-3.5-turbo'];
+        else rate = { prompt: 0.000001, completion: 0.000002 }; // Safe default
+    }
     
     const promptCost = (usage.prompt_tokens || 0) * rate.prompt;
     const completionCost = (usage.completion_tokens || 0) * rate.completion;

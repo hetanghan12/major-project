@@ -181,11 +181,33 @@ async function queryViaN8N(req, res, userId, question) {
         // Handle different response formats from n8n
         const answer = data.answer || data.response || data.message || data.output || data.text || 'No response received from AI';
         const sources = data.sources || data.documents || [];
+        const usage   = data.usage || data.model_usage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+        const model   = data.model || 'n8n-workflow';
+
+        // Log AI usage (always log at least a 0-token call for count accuracy)
+        const { logAIUsage, calculateEstimatedCost } = require('../services/logging.service');
+        
+        // Normalize usage object
+        const normalizedUsage = {
+            prompt_tokens: usage.prompt_tokens || usage.promptTokens || 0,
+            completion_tokens: usage.completion_tokens || usage.completionTokens || 0,
+            total_tokens: usage.total_tokens || usage.totalTokens || (usage.promptTokens || 0) + (usage.completionTokens || 0)
+        };
+
+        logAIUsage({
+            userId,
+            model,
+            type: 'CHAT',
+            usage: normalizedUsage,
+            cost: calculateEstimatedCost(model, normalizedUsage) || 0
+        }).catch(e => console.error('Background log for n8n failed:', e));
 
         res.json({
             success: true,
             answer,
             sources: Array.isArray(sources) ? sources : [],
+            usage, // Echo back usage to frontend
+            model,
             metadata: data.metadata || {}
         });
 

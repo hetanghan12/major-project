@@ -4,9 +4,10 @@
  * Administrative table for managing users and roles.
  */
 
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { AdminService } from '../../core/services/admin.service';
+import { AuthService } from '../../core/services/auth.service';
 import { FormsModule } from '@angular/forms';
 
 @Component({
@@ -37,19 +38,24 @@ import { FormsModule } from '@angular/forms';
             type="text" 
             placeholder="Search by name or email..." 
             class="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            [(ngModel)]="searchQuery"
+            [ngModel]="searchQuery()"
+            (ngModelChange)="searchQuery.set($event)"
           />
         </div>
         
         <div class="flex gap-4">
-          <select class="px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 dark:bg-gray-800" [(ngModel)]="roleFilter">
+          <select class="px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 dark:bg-gray-800" 
+                  [ngModel]="roleFilter()"
+                  (ngModelChange)="roleFilter.set($event)">
             <option value="">All Roles</option>
             <option value="Admin">Admin</option>
             <option value="Editor">Editor</option>
             <option value="User">User</option>
           </select>
           
-          <select class="px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 dark:bg-gray-800" [(ngModel)]="statusFilter">
+          <select class="px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 dark:bg-gray-800" 
+                  [ngModel]="statusFilter()"
+                  (ngModelChange)="statusFilter.set($event)">
             <option value="">All Statuses</option>
             <option value="Active">Active</option>
             <option value="Inactive">Inactive</option>
@@ -121,7 +127,8 @@ import { FormsModule } from '@angular/forms';
             </tr>
             <tr *ngIf="!filteredUsers()?.length">
               <td colspan="5" class="px-6 py-12 text-center text-gray-400">
-                <p>No users found matching your search</p>
+                <p class="mb-2">No users found matching your search.</p>
+                <p class="text-xs">Note: You are currently hidden from this list to prevent accidental self-modifications.</p>
               </td>
             </tr>
           </tbody>
@@ -135,28 +142,43 @@ import { FormsModule } from '@angular/forms';
 })
 export class UserManagementComponent implements OnInit {
   private adminService = inject(AdminService);
+  private authService  = inject(AuthService);
   users = this.adminService.users;
 
-  searchQuery = '';
-  roleFilter = '';
-  statusFilter = '';
+  searchQuery = signal('');
+  roleFilter = signal('');
+  statusFilter = signal('');
 
-  ngOnInit() {
-    this.adminService.loadUsers();
+  async ngOnInit() {
+    console.log('[UserManagement] Initializing and loading users...');
+    await this.adminService.loadUsers();
+    console.log('[UserManagement] Loaded users count:', this.users().length);
   }
 
-  filteredUsers() {
-    return this.users().filter(user => {
-      const matchesSearch = !this.searchQuery || 
-        user.email.toLowerCase().includes(this.searchQuery.toLowerCase()) ||
-        (user.displayName && user.displayName.toLowerCase().includes(this.searchQuery.toLowerCase()));
+  filteredUsers = computed(() => {
+    const currentUser = this.authService.currentUser();
+    const allUsers = this.users();
+    
+    return allUsers.filter(user => {
+      // Don't show the currently logged-in admin in their own management list
+      if (currentUser && (user.id === currentUser.uid || user.email === currentUser.email)) {
+        return false;
+      }
+
+      const query = this.searchQuery().toLowerCase();
+      const matchesSearch = !query || 
+        user.email.toLowerCase().includes(query) ||
+        (user.displayName && user.displayName.toLowerCase().includes(query));
       
-      const matchesRole = !this.roleFilter || user.role === this.roleFilter;
-      const matchesStatus = !this.statusFilter || user.status === this.statusFilter;
+      const roleFilter = this.roleFilter();
+      const statusFilter = this.statusFilter();
+
+      const matchesRole = !roleFilter || user.role === roleFilter;
+      const matchesStatus = !statusFilter || user.status === statusFilter;
 
       return matchesSearch && matchesRole && matchesStatus;
     });
-  }
+  });
 
   async onDelete(userId: string) {
     if (confirm('Are you sure you want to delete this user? This action cannot be undone.')) {

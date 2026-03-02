@@ -263,25 +263,17 @@ export class AdminService {
             }
         } catch (error: any) {
             console.error('[AdminService] loadAIMetrics error:', error?.error?.message || error?.message);
-            // Fallback metrics so the AI Usage page isn't blank
-            this.aiMetrics.set(this._defaultAIMetrics());
+            // Return empty stats so the UI shows "No activity" instead of fake data
+            this.aiMetrics.set(this._emptyAIMetrics());
         }
     }
 
-    private _defaultAIMetrics() {
+    private _emptyAIMetrics() {
         return {
-            breakdown: [
-                { category: 'Chat Completion', value: 45, status: 'Active', color: 'emerald', models: 'GPT-4o, GPT-3.5 Turbo' },
-                { category: 'Code Generation', value: 28, status: 'Active', color: 'blue', models: 'Claude 3.5 Sonnet' },
-                { category: 'Image Processing', value: 15, status: 'Active', color: 'purple', models: 'DALL-E 3' },
-                { category: 'Translation', value: 12, status: 'Active', color: 'amber', models: 'DeepL, Google AI' }
-            ],
-            models: [
-                { name: 'GPT-4o (OpenAI)', calls: 12504, tokens: '5.2M', cost: 154.20, status: 'HEALTHY', color: 'emerald' },
-                { name: 'Claude 3.5 Sonnet (Anthropic)', calls: 8210, tokens: '3.8M', cost: 82.45, status: 'HEALTHY', color: 'emerald' },
-                { name: 'DALL-E 3 (OpenAI)', calls: 1402, tokens: '-', cost: 21.50, status: 'HEALTHY', color: 'emerald' }
-            ],
-            trend: [30, 45, 60, 55, 80, 95, 70, 85, 65, 40, 50, 75, 90, 100, 85, 75, 60, 45, 30, 20]
+            breakdown: [],
+            models: [],
+            trend: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            stats: { totalCalls: 0, totalTokens: 0, totalCost: 0 }
         };
     }
 }

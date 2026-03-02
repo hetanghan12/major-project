@@ -34,24 +34,24 @@ import { AdminService } from '../../core/services/admin.service';
       </div>
 
       <!-- Real Data Content -->
-      <ng-container *ngIf="!loading() && adminService.aiMetrics()">
+      <ng-container *ngIf="!loading() && adminService.aiMetrics() && (adminService.aiMetrics()?.stats?.totalCalls || 0) > 0">
         
         <!-- Summary Stats -->
-        <div *ngIf="adminService.aiMetrics()?.stats" class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div class="card p-6 bg-white border border-slate-100 shadow-sm">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <div class="card p-6 bg-white border border-slate-100 shadow-sm transition-all hover:shadow-md">
             <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Total AI Calls</p>
-            <h3 class="text-2xl font-bold">{{ adminService.aiMetrics().stats.totalCalls }}</h3>
-            <p class="text-xs text-green-500 mt-2">Real-time usage logged</p>
+            <h3 class="text-2xl font-bold text-slate-900">{{ adminService.aiMetrics()?.stats?.totalCalls || 0 }}</h3>
+            <p class="text-xs text-green-600 mt-2 font-medium">Real-time usage logged</p>
           </div>
-          <div class="card p-6 bg-white border border-slate-100 shadow-sm">
+          <div class="card p-6 bg-white border border-slate-100 shadow-sm transition-all hover:shadow-md">
             <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Tokens Consumed</p>
-            <h3 class="text-2xl font-bold">{{ adminService.aiMetrics().stats.totalTokens }}</h3>
-            <p class="text-xs text-indigo-500 mt-2">Across all models</p>
+            <h3 class="text-2xl font-bold text-slate-900">{{ adminService.aiMetrics()?.stats?.totalTokens || 0 }}</h3>
+            <p class="text-xs text-indigo-600 mt-2 font-medium">Across all models</p>
           </div>
-          <div class="card p-6 bg-white border border-slate-100 shadow-sm">
+          <div class="card p-6 bg-white border border-slate-100 shadow-sm transition-all hover:shadow-md">
             <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Estimated Cost</p>
-            <h3 class="text-2xl font-bold">$ {{ adminService.aiMetrics()?.stats?.totalCost }}</h3>
-            <p class="text-xs text-amber-500 mt-2">USD Based on current rates</p>
+            <h3 class="text-2xl font-bold text-slate-900">$ {{ adminService.aiMetrics()?.stats?.totalCost || 0 }}</h3>
+            <p class="text-xs text-amber-600 mt-2 font-medium">USD Based on current rates</p>
           </div>
         </div>
 
@@ -117,7 +117,7 @@ import { AdminService } from '../../core/services/admin.service';
       </ng-container>
 
       <!-- Empty state when no metrics at all -->
-      <div *ngIf="!loading() && (!adminService.aiMetrics() || adminService.aiMetrics()?.stats?.totalCalls === 0)" 
+      <div *ngIf="!loading() && (!adminService.aiMetrics() || (adminService.aiMetrics()?.stats?.totalCalls || 0) === 0)" 
            class="card p-12 text-center text-slate-400 bg-white shadow-sm border border-slate-100">
         <div class="ai-assistant-btn w-fit mx-auto mb-4 pointer-events-none opacity-50">
           <svg class="w-8 h-8 mx-auto text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -142,7 +142,14 @@ export class AIUsageComponent implements OnInit {
 
   async load() {
     this.loading.set(true);
-    await this.adminService.loadAIMetrics();
-    this.loading.set(false);
+    console.log('[AIUsage] Fetching metrics from API...');
+    try {
+      const stats = await this.adminService.loadAIMetrics();
+      console.log('[AIUsage] API Response stats:', stats);
+    } catch (e) {
+      console.error('[AIUsage] Fetch failed:', e);
+    } finally {
+      this.loading.set(false);
+    }
   }
 }
