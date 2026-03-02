@@ -189,11 +189,16 @@ const recordFailure = asyncHandler(async (req, res) => {
     if (!email) throw new ApiError(400, 'Email is required');
 
     const result = await adminService.incrementLoginFailures(email, req.ip);
+    const settings = await adminService.getSettings();
+    const maxAttempts = settings.maxLoginAttempts || 5;
+    const isLocked = result.failures >= maxAttempts;
     
     res.json({
         success: true,
-        locked: result.failures >= (await adminService.getSettings()).maxLoginAttempts,
-        attempts: result.failures
+        locked: isLocked,
+        lockedUntil: result.lockedUntil || null,
+        attempts: result.failures,
+        maxAttempts
     });
 });
 

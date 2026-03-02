@@ -396,15 +396,23 @@ async function updateSettings(settings) {
 async function getSettings() {
     const db = getFirestore();
     const doc = await db.collection(SETTINGS_COLLECTION).doc('global').get();
-    if (!doc.exists) {
-        return {
-            systemName: 'Cloud Space',
-            adminEmail: 'admin@cloudspace.com',
-            maintenanceMode: false,
-            darkModeDefault: true
-        };
-    }
-    return doc.data();
+    const defaults = {
+        systemName: 'Cloud Space',
+        adminEmail: 'admin@cloudspace.com',
+        maxFileSizeMB: 500,
+        registrationOpen: true,
+        maintenanceMode: false,
+        sessionTimeout: 60,
+        maxLoginAttempts: 5,
+        require2FA: false,
+        emailOnNewUser: true,
+        emailOnFileUpload: false,
+        emailOnError: true,
+        weeklyReport: true
+    };
+    if (!doc.exists) return defaults;
+    // Merge saved settings on top of defaults so nothing is missing
+    return { ...defaults, ...doc.data() };
 }
 
 /**

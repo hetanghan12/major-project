@@ -195,7 +195,8 @@ export class AuthService {
         // First check if email is locked out
         const lockout = await this.checkLockoutStatus(email);
         if (lockout && lockout.locked) {
-            throw new Error(`Account temporarily locked. Try again after ${new Date(lockout.lockedUntil).toLocaleTimeString()}`);
+            const time = new Date(lockout.lockedUntil).toLocaleTimeString();
+            throw new Error(`Account locked after too many failed attempts. Try again after ${time}.`);
         }
 
         try {
@@ -204,8 +205,20 @@ export class AuthService {
             this._currentUser.set(user);
             return user;
         } catch (error: any) {
-            if (error.code === 'auth/wrong-password') {
-                await this.recordLoginFailure(email);
+            // Firebase v9 uses 'auth/invalid-credential' for wrong password
+            // Older SDKs use 'auth/wrong-password'
+            const isWrongPassword = [
+                'auth/wrong-password',
+                'auth/invalid-credential',
+                'auth/invalid-login-credentials'
+            ].includes(error.code);
+
+            if (isWrongPassword) {
+                const result = await this.recordLoginFailure(email);
+                if (result?.locked) {
+                    const time = new Date(result.lockedUntil).toLocaleTimeString();
+                    throw new Error(`Account locked after too many failed attempts. Try again after ${time}.`);
+                }
             }
             throw this.handleAuthError(error);
         }
@@ -233,7 +246,8 @@ export class AuthService {
         // First check if email is locked out
         const lockout = await this.checkLockoutStatus(email);
         if (lockout && lockout.locked) {
-            throw new Error(`Account temporarily locked. Try again after ${new Date(lockout.lockedUntil).toLocaleTimeString()}`);
+            const time = new Date(lockout.lockedUntil).toLocaleTimeString();
+            throw new Error(`Account locked after too many failed attempts. Try again after ${time}.`);
         }
 
         try {
@@ -242,8 +256,19 @@ export class AuthService {
             this._currentUser.set(user);
             return { user };
         } catch (error: any) {
-            if (error.code === 'auth/wrong-password') {
-                await this.recordLoginFailure(email);
+            // Record failure for wrong password (Firebase v9 compatibility)
+            const isWrongPassword = [
+                'auth/wrong-password',
+                'auth/invalid-credential',
+                'auth/invalid-login-credentials'
+            ].includes(error.code);
+
+            if (isWrongPassword) {
+                const result = await this.recordLoginFailure(email);
+                if (result?.locked) {
+                    const time = new Date(result.lockedUntil).toLocaleTimeString();
+                    throw new Error(`Account locked after too many failed attempts. Try again after ${time}.`);
+                }
             }
             if (error.code === 'auth/multi-factor-auth-required') {
                 const resolver = getMultiFactorResolver(this.auth, error as MultiFactorError);
@@ -368,12 +393,14 @@ export class AuthService {
      */
     private handleAuthError(error: any): Error {
         const errorMessages: { [key: string]: string } = {
-            'auth/user-not-found': 'No account found with this email',
-            'auth/wrong-password': 'Incorrect password',
-            'auth/email-already-in-use': 'Email is already registered',
-            'auth/invalid-email': 'Invalid email format',
-            'auth/invalid-verification-code': 'Invalid 2FA code',
-            'auth/too-many-requests': 'Account temporarily disabled due to too many failed attempts. (Firebase Check)'
+            'auth/user-not-found': 'No account found with this email.',
+            'auth/wrong-password': 'Incorrect password.',
+            'auth/invalid-credential': 'Incorrect email or password.',
+            'auth/invalid-login-credentials': 'Incorrect email or password.',
+            'auth/email-already-in-use': 'Email is already registered.',
+            'auth/invalid-email': 'Invalid email format.',
+            'auth/invalid-verification-code': 'Invalid 2FA code.',
+            'auth/too-many-requests': 'Too many failed attempts. Firebase has temporarily blocked this account.'
         };
         return new Error(errorMessages[error.code] || error.message || 'An error occurred');
     }
@@ -388,11 +415,11 @@ export class AuthService {
     }
 
     /**
-     * Record a failure on the backend
+     * Record a failure on the backend — returns lockout info if now locked
      */
-    private async recordLoginFailure(email: string): Promise<void> {
+    private async recordLoginFailure(email: string): Promise<any> {
         try {
-            await firstValueFrom(this.http.post(`${environment.apiUrl}/auth/fail`, { email }));
-        } catch (e) { }
+            return await firstValueFrom(this.http.post(`${environment.apiUrl}/auth/fail`, { email }));
+        } catch (e) { return null; }
     }
 }
