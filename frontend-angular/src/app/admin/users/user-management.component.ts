@@ -77,7 +77,7 @@ import { FormsModule } from '@angular/forms';
             </tr>
           </thead>
           <tbody class="divide-y divide-gray-100 dark:divide-gray-700">
-            <tr *ngFor="let user of filteredUsers()" class="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+            <tr *ngFor="let user of filteredUsers()" class="user-row transition-colors">
               <td class="px-6 py-4">
                 <div class="flex items-center gap-3">
                   <div class="w-10 h-10 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold">
@@ -147,6 +147,22 @@ import { FormsModule } from '@angular/forms';
   `,
   styles: [`
     :host { display: block; }
+    .user-row:hover {
+      background-color: #f8fafc !important;
+    }
+    .user-row p, .user-row span {
+      color: #1e293b !important; /* Force deep slate for readability */
+    }
+    .user-row .text-gray-500 {
+      color: #64748b !important; /* Slightly lighter for secondary info */
+    }
+    /* Indicator for locked users stays red regardless */
+    .user-row .text-red-600 {
+      color: #dc2626 !important;
+    }
+    .user-row .text-green-500 {
+      color: #10b981 !important;
+    }
   `]
 })
 export class UserManagementComponent implements OnInit {
