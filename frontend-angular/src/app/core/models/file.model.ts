@@ -27,6 +27,7 @@ export interface CloudFile {
 
     // For display
     thumbnailUrl?: string;
+    thumbnailStatus?: 'processing' | 'ready' | 'failed';
     error?: string;
 }
 

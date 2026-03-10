@@ -5,7 +5,7 @@
  * 
  * SECURITY FEATURES:
  * - Strict file type validation (extension + MIME)
- * - File size limits (10MB max)
+ * - File size limits (50MB max)
  * - Sanitized filenames (prevents traversal)
  * - Unique filename generation (prevents overwrites)
  * - Temporary storage with cleanup
@@ -22,7 +22,7 @@ const { v4: uuidv4 } = require('uuid');
 // CONFIGURATION
 // =============================================================================
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 const UPLOAD_FIELD_NAME = 'file'; // MUST match Angular FormData field name
 
 // Ensure uploads directory exists
@@ -40,10 +40,17 @@ const ALLOWED_MIME_TYPES = {
     'application/pdf': 'pdf',
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
     'application/msword': 'doc',
-    'text/plain': 'txt'
+    'text/plain': 'txt',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+    'application/vnd.ms-powerpoint': 'ppt',
+    'image/jpeg': 'jpg',
+    'image/png': 'png',
+    'audio/mpeg': 'mp3',
+    'audio/wav': 'wav',
+    'audio/x-wav': 'wav'
 };
 
-const ALLOWED_EXTENSIONS = ['.pdf', '.docx', '.doc', '.txt'];
+const ALLOWED_EXTENSIONS = ['.pdf', '.docx', '.doc', '.txt', '.ppt', '.pptx', '.jpg', '.jpeg', '.png', '.mp3', '.wav'];
 
 // =============================================================================
 // FILENAME SANITIZATION
@@ -186,6 +193,16 @@ function getFileType(filename) {
             return 'docx';
         case '.txt':
             return 'txt';
+        case '.pptx':
+        case '.ppt':
+            return 'pptx';
+        case '.jpg':
+        case '.jpeg':
+        case '.png':
+            return 'image';
+        case '.mp3':
+        case '.wav':
+            return 'audio';
         default:
             return 'unknown';
     }

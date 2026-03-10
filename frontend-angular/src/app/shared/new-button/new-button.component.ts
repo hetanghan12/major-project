@@ -25,7 +25,7 @@ import { CommonModule } from '@angular/common';
 
             <div class="new-dropdown" *ngIf="isOpen()">
                 <!-- Create Folder -->
-                <button class="new-dropdown-item" (click)="onCreate('folder')">
+                <button class="new-dropdown-item" (click)="onCreate('folder', $event)">
                     <div class="new-dropdown-icon folder">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
@@ -38,7 +38,7 @@ import { CommonModule } from '@angular/common';
                 <div class="new-dropdown-divider"></div>
 
                 <!-- File Upload -->
-                <button class="new-dropdown-item" (click)="onCreate('file-upload')">
+                <button class="new-dropdown-item" (click)="onCreate('file-upload', $event)">
                     <div class="new-dropdown-icon upload">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
@@ -49,7 +49,7 @@ import { CommonModule } from '@angular/common';
                 </button>
 
                 <!-- Folder Upload -->
-                <button class="new-dropdown-item" (click)="onCreate('folder-upload')">
+                <button class="new-dropdown-item" (click)="onCreate('folder-upload', $event)">
                     <div class="new-dropdown-icon upload">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
@@ -62,7 +62,7 @@ import { CommonModule } from '@angular/common';
                 <div class="new-dropdown-divider"></div>
 
                 <!-- Google Docs (placeholder) -->
-                <button class="new-dropdown-item" (click)="onCreate('google-docs')">
+                <button class="new-dropdown-item" (click)="onCreate('google-docs', $event)">
                     <div class="new-dropdown-icon docs">
                         <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
                             <path d="M14,2H6C4.9,2,4,2.9,4,4v16c0,1.1,0.9,2,2,2h12c1.1,0,2-0.9,2-2V8L14,2z M16,18H8v-2h8V18z M16,14H8v-2h8V14z M13,9V3.5 L18.5,9H13z"/>
@@ -71,7 +71,7 @@ import { CommonModule } from '@angular/common';
                     <span>Document</span>
                 </button>
 
-                <button class="new-dropdown-item" (click)="onCreate('google-sheets')">
+                <button class="new-dropdown-item" (click)="onCreate('google-sheets', $event)">
                     <div class="new-dropdown-icon sheets">
                         <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
                             <path d="M19,11V9h-6V5h-2v4H5v2h6v10h2V11H19z M19,3H5C3.9,3,3,3.9,3,5v14c0,1.1,0.9,2,2,2h14c1.1,0,2-0.9,2-2V5 C21,3.9,20.1,3,19,3z"/>
@@ -88,7 +88,7 @@ import { CommonModule } from '@angular/common';
             type="file" 
             class="hidden" 
             multiple 
-            accept=".pdf,.docx,.doc,.xlsx,.xls,.pptx,.ppt,.txt,.jpg,.jpeg,.png"
+            accept=".pdf,.docx,.doc,.xlsx,.xls,.pptx,.ppt,.txt,.jpg,.jpeg,.png,.mp3,.wav"
             (change)="onFileSelected($event)"/>
         
         <input 
@@ -221,7 +221,11 @@ export class NewButtonComponent {
         this.isOpen.set(!this.isOpen());
     }
 
-    onCreate(type: string) {
+    onCreate(type: string, event?: MouseEvent) {
+        if (event) {
+            event.stopPropagation();
+            event.preventDefault();
+        }
         this.isOpen.set(false);
 
         switch (type) {

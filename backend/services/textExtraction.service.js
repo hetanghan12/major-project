@@ -10,6 +10,9 @@ const fs = require('fs');
 const pdfParse = require('pdf-parse');
 const mammoth = require('mammoth');
 const path = require('path');
+const officeParser = require('officeparser');
+const Tesseract = require('tesseract.js');
+const { getOpenAI } = require('../config/openai.config');
 
 /**
  * Convert MIME type to file extension
@@ -21,7 +24,14 @@ function normalizeFileType(mimeTypeOrExt) {
         'application/pdf': 'pdf',
         'application/msword': 'doc',
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
-        'text/plain': 'txt'
+        'text/plain': 'txt',
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+        'application/vnd.ms-powerpoint': 'ppt',
+        'image/jpeg': 'jpg',
+        'image/png': 'png',
+        'audio/mpeg': 'mp3',
+        'audio/wav': 'wav',
+        'audio/x-wav': 'wav'
     };
 
     // Check if it's a MIME type
@@ -52,6 +62,18 @@ async function extractText(filePath, fileTypeOrMime) {
                 return await extractFromDOCX(filePath);
             case 'txt':
                 return await extractFromTXT(filePath);
+            case 'pptx':
+            case 'ppt':
+                return await extractFromPPTX(filePath);
+            case 'jpg':
+            case 'jpeg':
+            case 'png':
+            case 'image':
+                return await extractFromImage(filePath);
+            case 'mp3':
+            case 'wav':
+            case 'audio':
+                return await extractFromAudio(filePath);
             default:
                 console.log(`   ⚠️ Unsupported file type: ${fileType} (original: ${fileTypeOrMime})`);
                 return ''; // Return empty string instead of throwing
@@ -99,6 +121,57 @@ async function extractFromTXT(filePath) {
     console.log(`   ✅ Extracted ${text.length} characters from TXT`);
 
     return text;
+}
+
+/**
+ * Extract text from PPTX/PPT file
+ */
+async function extractFromPPTX(filePath) {
+    try {
+        const data = await officeParser.parseOfficeAsync(filePath);
+        const text = data ? data.trim() : '';
+        console.log(`   ✅ Extracted ${text.length} characters from PPTX/PPT`);
+        return text;
+    } catch (error) {
+        console.error('Failed to parse PPTX/PPT:', error);
+        return '';
+    }
+}
+
+/**
+ * Extract text from Image (OCR)
+ */
+async function extractFromImage(filePath) {
+    console.log(`   📸 Starting OCR for image...`);
+    try {
+        const { data: { text } } = await Tesseract.recognize(filePath, 'eng');
+        const result = text.trim();
+        console.log(`   ✅ Extracted ${result.length} characters from Image`);
+        return result;
+    } catch (error) {
+        console.error('Failed OCR:', error);
+        return '';
+    }
+}
+
+/**
+ * Extract text from Audio (Whisper)
+ */
+async function extractFromAudio(filePath) {
+    console.log(`   🎧 Starting transcription for audio...`);
+    try {
+        const openai = getOpenAI();
+        const transcription = await openai.audio.transcriptions.create({
+            file: fs.createReadStream(filePath),
+            model: 'whisper-1'
+        });
+        const result = transcription.text.trim();
+        console.log(`   ✅ Extracted ${result.length} characters from Audio`);
+        return result;
+    } catch (error) {
+        console.error('Failed Audio transcription:', error);
+        return '';
+    }
 }
 
 /**

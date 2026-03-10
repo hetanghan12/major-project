@@ -26,22 +26,30 @@ const DOCUMENTS_COLLECTION = 'documents';
  * @param {Object} userData - User data
  */
 async function createOrUpdateUser(userId, userData) {
-    const db = getFirestore();
-    const userRef = db.collection(USERS_COLLECTION).doc(userId);
+    try {
+        const db = getFirestore();
+        const userRef = db.collection(USERS_COLLECTION).doc(userId);
 
-    const data = {
-        userId,
-        email: userData.email,
-        displayName: userData.displayName || null,
-        photoURL: userData.photoURL || null,
-        updatedAt: new Date().toISOString(),
-        ...(!userData.createdAt && { createdAt: new Date().toISOString() })
-    };
+        const data = {
+            userId,
+            email: userData.email,
+            displayName: userData.displayName || null,
+            photoURL: userData.photoURL || null,
+            updatedAt: new Date().toISOString(),
+            ...(!userData.createdAt && { createdAt: new Date().toISOString() })
+        };
 
-    await userRef.set(data, { merge: true });
-    console.log(`✅ User profile saved: ${userId}`);
+        await userRef.set(data, { merge: true });
+        console.log(`✅ User profile saved: ${userId}`);
 
-    return data;
+        return data;
+    } catch (error) {
+        if (error.code === 8 || error.message.includes('Quota')) {
+            console.warn(`⚠️  [QUOTA] Exceeded for createOrUpdateUser (User: ${userId}). Serving virtual profile.`);
+            return { userId, email: userData.email, displayName: userData.displayName, photoURL: userData.photoURL, quotaExceeded: true };
+        }
+        throw error;
+    }
 }
 
 /**
@@ -49,14 +57,22 @@ async function createOrUpdateUser(userId, userData) {
  * @param {string} userId - Firebase Auth user ID
  */
 async function getUser(userId) {
-    const db = getFirestore();
-    const userDoc = await db.collection(USERS_COLLECTION).doc(userId).get();
+    try {
+        const db = getFirestore();
+        const userDoc = await db.collection(USERS_COLLECTION).doc(userId).get();
 
-    if (!userDoc.exists) {
-        return null;
+        if (!userDoc.exists) {
+            return null;
+        }
+
+        return { id: userDoc.id, ...userDoc.data() };
+    } catch (error) {
+        if (error.code === 8 || error.message.includes('Quota')) {
+            console.warn(`⚠️  [QUOTA] Exceeded for getUser (User: ${userId}). Returning null for virtual profile fallback.`);
+            return null;
+        }
+        throw error;
     }
-
-    return { id: userDoc.id, ...userDoc.data() };
 }
 
 // =============================================================================
@@ -86,36 +102,46 @@ async function saveDocument(documentData) {
         // File information
         fileName: documentData.fileName,
         fileType: documentData.fileType,
-        fileSize: documentData.fileSize,
+        fileSize: documentData.fileSize || 0,
 
         // Storage paths
-        storagePath: documentData.storagePath,      // Local file path
-        publicUrl: documentData.publicUrl,
+        storagePath: documentData.storagePath || null,
+        publicUrl: documentData.publicUrl || null,
 
         // AWS S3 storage (REQUIRED for S3 deletion)
         s3Key: documentData.s3Key || null,          // S3 object key
         s3Url: documentData.s3Url || null,          // S3 URL
 
         // Pinecone vectors (REQUIRED for complete vector deletion)
-        pineconeNamespace: documentData.pineconeNamespace || documentData.userId,  // namespace = userId
+        pineconeNamespace: documentData.pineconeNamespace || documentData.userId || null,
         chunkIds: documentData.chunkIds || [],      // Explicit chunk IDs for deletion
         vectorCount: documentData.vectorCount || 0,
 
         // Thumbnail (Google Drive-style preview - stored in S3)
-        thumbnailUrl: documentData.thumbnailUrl || null,  // Legacy field
-        previewUrl: documentData.previewUrl || null,      // S3 preview URL
-        previewPath: documentData.previewPath || null,    // S3 preview key
+        thumbnailUrl: documentData.thumbnailUrl || null,
+        thumbnailStatus: documentData.thumbnailStatus || (documentData.isFolder ? 'ready' : 'processing'),
+        previewUrl: documentData.previewUrl || null,
+        previewPath: documentData.previewPath || null,
         previewGenerated: documentData.previewGenerated || false,
 
         // Status tracking
         status: documentData.status || 'processing',
-        uploadedAt: new Date().toISOString()
+        uploadedAt: documentData.uploadedAt || new Date().toISOString(),
+
+        // Folder properties
+        isFolder: documentData.isFolder || false,
+        parentFolderId: documentData.parentFolderId || null,
+
+        // User states
+        isStarred: documentData.isStarred || false,
+        isTrashed: documentData.isTrashed || false
     };
 
     await docRef.set(data);
     console.log(`✅ Document metadata saved: ${documentData.documentId}`);
+    console.log(`   - Type: ${data.isFolder ? 'FOLDER' : 'FILE'}`);
     console.log(`   - S3 Key: ${data.s3Key || 'not set'}`);
-    console.log(`   - Namespace: ${data.pineconeNamespace}`);
+    console.log(`   - Namespace: ${data.pineconeNamespace || 'not set'}`);
     console.log(`   - Chunk IDs: ${data.chunkIds.length}`);
 
     return data;
@@ -160,40 +186,69 @@ async function updateDocument(documentId, data) {
 }
 
 /**
- * Get documents for a user
+ * Get documents for a user with Pagination
  * @param {string} userId - User ID
- * @param {Object} options - Query options
- * 
- * NOTE: Using in-memory sorting to avoid requiring a Firestore composite index.
- * For production, create the index: documents (userId ASC, uploadedAt DESC)
+ * @param {Object} options - { limit: number, lastDocId: string, filter: string }
  */
 async function getUserDocuments(userId, options = {}) {
-    const db = getFirestore();
+    try {
+        const db = getFirestore();
 
-    // Query without orderBy to avoid composite index requirement
-    // Sorting will be done in-memory after fetching
-    let query = db.collection(DOCUMENTS_COLLECTION)
-        .where('userId', '==', userId);
+        console.log(`      [DB] getUserDocuments for ${userId}, filter: ${options.filter || 'all'}`);
 
-    if (options.limit) {
-        query = query.limit(options.limit);
+        // =====================================================================
+        // SIMPLE QUERY — NO COMPOSITE INDEX REQUIRED
+        // Only uses .where('userId', '==', userId) — a single-field query.
+        // All filtering and sorting is done in memory.
+        // This avoids the FAILED_PRECONDITION error entirely.
+        // =====================================================================
+        const snapshot = await db.collection(DOCUMENTS_COLLECTION)
+            .where('userId', '==', userId)
+            .get();
+
+        console.log(`      [DB] Fetched ${snapshot.size} total docs for user ${userId}`);
+
+        let allDocs = [];
+        snapshot.forEach(doc => allDocs.push({ id: doc.id, ...doc.data() }));
+
+        // In-memory filter based on requested view
+        if (options.filter === 'trash') {
+            allDocs = allDocs.filter(d => d.status === 'trash' || d.isTrashed === true);
+        } else if (options.filter === 'starred') {
+            allDocs = allDocs.filter(d => d.isStarred === true && d.isTrashed !== true);
+        } else if (options.filter === 'recent') {
+            const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+            allDocs = allDocs.filter(d => d.isTrashed !== true && d.uploadedAt >= sevenDaysAgo);
+        } else {
+            // Default view: return ALL documents (including trashed & starred)
+            // The frontend handles view-specific filtering (My Files, Starred, Trash, etc.)
+            allDocs = allDocs.filter(d => d.status !== 'failed');
+        }
+
+        console.log(`      [DB] After filtering: ${allDocs.length} docs remain`);
+
+        // In-memory sort by uploadedAt descending
+        allDocs.sort((a, b) => new Date(b.uploadedAt || 0) - new Date(a.uploadedAt || 0));
+
+        return {
+            documents: allDocs.map(data => ({
+                id: data.id,
+                documentId: data.documentId || data.id,
+                ...data,
+                thumbnailStatus: data.thumbnailStatus || (data.previewUrl ? 'ready' : (data.previewFailed ? 'failed' : 'processing')),
+                thumbnailUrl: data.thumbnailUrl || data.previewUrl || null
+            })),
+            lastDocId: allDocs.length > 0 ? allDocs[allDocs.length - 1].id : null,
+            hasMore: false
+        };
+
+    } catch (error) {
+        console.error('❌ getUserDocuments failed:', error.message);
+        if (error.code === 8 || error.message.includes('Quota')) {
+            return { documents: [], lastDocId: null, hasMore: false, error: 'Storage quota exceeded' };
+        }
+        throw error;
     }
-
-    const snapshot = await query.get();
-    const documents = [];
-
-    snapshot.forEach(doc => {
-        documents.push({ id: doc.id, ...doc.data() });
-    });
-
-    // Sort by uploadedAt descending (newest first) in-memory
-    documents.sort((a, b) => {
-        const dateA = new Date(a.uploadedAt || 0);
-        const dateB = new Date(b.uploadedAt || 0);
-        return dateB - dateA;  // Descending order
-    });
-
-    return documents;
 }
 
 /**
@@ -208,7 +263,14 @@ async function getDocument(documentId) {
         return null;
     }
 
-    return { id: docRef.id, ...docRef.data() };
+    const data = docRef.data();
+    return {
+        id: docRef.id,
+        documentId: data.documentId || docRef.id,
+        ...data,
+        thumbnailStatus: data.thumbnailStatus || (data.previewUrl ? 'ready' : (data.previewFailed ? 'failed' : 'processing')),
+        thumbnailUrl: data.thumbnailUrl || data.previewUrl || null
+    };
 }
 
 /**
@@ -235,6 +297,25 @@ async function getUserDocumentCount(userId) {
     return snapshot.data().count;
 }
 
+/**
+ * Get all subscription plans
+ */
+async function getSubscriptionPlans() {
+    const db = getFirestore();
+    const snapshot = await db.collection('subscription_plans').get();
+
+    const plans = [];
+    snapshot.forEach(doc => {
+        plans.push({
+            id: doc.id,
+            ...doc.data()
+        });
+    });
+
+    // Sort plans by order or creation date if necessary, or let frontend handle it
+    return plans;
+}
+
 module.exports = {
     // User operations
     createOrUpdateUser,
@@ -247,5 +328,6 @@ module.exports = {
     getUserDocuments,
     getDocument,
     deleteDocument,
-    getUserDocumentCount
+    getUserDocumentCount,
+    getSubscriptionPlans
 };

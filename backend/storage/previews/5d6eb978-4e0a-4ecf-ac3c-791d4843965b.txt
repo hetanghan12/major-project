@@ -1,0 +1,258 @@
+Project Proposal
+
+Cloud-Based Document Storage with AI Assistant
+
+
+
+Submitted By
+
+Team Size: 3 Members
+
+Project Type: College / Academic Project
+
+Domain: Cloud Computing + Artificial Intelligence
+
+
+
+1. Project Title
+
+Secure Cloud Storage Platform with Private AI Assistant
+
+
+
+2. Problem Statement
+
+In many organizations and educational environments, users store documents digitally but face difficulty in: - Quickly finding relevant information inside documents - Understanding large documents - Managing personal data securely
+
+Existing AI tools often use public or mixed data, which raises privacy and security concerns.
+
+
+
+3. Proposed Solution
+
+We propose to build a cloud-based web application where: - Each user gets personal cloud storage - Users can upload documents (PDF, DOC, TXT, etc.) - An AI assistant answers questions only from the user’s uploaded documents - User data is fully isolated and secure
+
+The AI assistant will not access data from other users, ensuring complete privacy.
+
+
+
+4. Key Features
+
+User registration and login
+
+Secure document upload
+
+Cloud-based document storage
+
+Dedicated page to view and download uploaded files
+
+AI assistant for question answering
+
+AI responses based only on user data
+
+Workflow automation using n8n
+
+Vector-based document search
+
+
+
+5. System Architecture Overview
+
+High-Level Flow
+
+User logs in to the system
+
+User uploads documents
+
+Documents are stored securely in cloud storage
+
+Text is extracted from documents
+
+Text is converted into vector embeddings
+
+Vectors are stored in Pinecone with user-specific separation
+
+User asks a question
+
+AI assistant retrieves relevant document data
+
+AI generates and returns an answer
+
+
+
+6. Technology Stack
+
+Frontend
+
+React.js
+
+Tailwind CSS
+
+Backend
+
+Node.js
+
+Express.js
+
+Authentication
+
+Firebase Authentication
+
+Cloud Storage
+
+Firebase Cloud Storage
+
+Database (Metadata)
+
+Firebase Firestore
+
+Vector Database
+
+Pinecone Vector Database
+
+AI & Automation
+
+n8n Workflow Automation
+
+Large Language Model (LLM API)
+
+
+
+7. Data Security & Privacy
+
+Each user has a unique user ID
+
+Documents are stored in user-specific folders
+
+Pinecone uses separate namespaces per user
+
+AI assistant can only access the current user’s data
+
+No data sharing between users
+
+
+
+8. Database Design (Overview)
+
+User Data
+
+User ID
+
+Email
+
+Account creation date
+
+Document Data
+
+Document ID
+
+User ID
+
+File name and type
+
+Storage path
+
+Upload timestamp
+
+Vector Metadata
+
+User ID
+
+Document ID
+
+Text chunk reference
+
+
+
+9. Project Timeline
+
+Phase
+
+Duration
+
+Planning & Setup
+
+3 days
+
+Backend Development
+
+7 days
+
+Frontend Development
+
+7 days
+
+AI & n8n Integration
+
+5 days
+
+Testing & Deployment
+
+4 days
+
+Total Estimated Time: ~4 weeks
+
+
+
+10. Cost Estimation (Using Free Tiers)
+
+Service
+
+Estimated Cost
+
+Firebase
+
+Free Tier
+
+Pinecone
+
+Free Tier
+
+n8n (Self-hosted)
+
+Free
+
+Hosting
+
+Free
+
+Total Cost: Minimal / Free for academic use
+
+
+
+11. Advantages of the Project
+
+Real-world cloud architecture
+
+AI-powered document understanding
+
+Strong focus on data privacy
+
+Scalable design
+
+Industry-relevant technologies
+
+
+
+12. Future Enhancements
+
+Role-based access control
+
+Document sharing
+
+OCR for image-based documents
+
+Chat history
+
+Subscription-based model
+
+
+
+13. Conclusion
+
+This project demonstrates the practical use of cloud computing, databases, and artificial intelligence in a real-world scenario. It provides a secure, scalable, and intelligent document management solution suitable for academic evaluation and future expansion.
+
+
+
+We kindly request approval to proceed with this project.
+

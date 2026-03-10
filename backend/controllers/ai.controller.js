@@ -20,8 +20,10 @@
  */
 
 const { searchDocuments, buildContext } = require('../services/embedding.service');
+const { getAccessibleNamespacesForAI } = require('../services/share.service');
 const { generateResponse } = require('../config/openai.config');
 const { asyncHandler, ApiError } = require('../middlewares/error.middleware');
+const { trackAiRequest } = require('../services/analytics.service');
 
 // n8n webhook URL for alternative AI processing
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL;
@@ -54,6 +56,9 @@ const queryAI = asyncHandler(async (req, res) => {
     console.log(`   UserId (from verified token): ${userId}`);
     console.log(`   Question: ${question.substring(0, 100)}...`);
 
+    // Track AI request for dashboard stats
+    trackAiRequest().catch(err => console.error('AI track failed:', err.message));
+
     // If n8n webhook is configured, use it
     if (N8N_WEBHOOK_URL) {
         return await queryViaN8N(req, res, userId, question);
@@ -68,13 +73,21 @@ const queryAI = asyncHandler(async (req, res) => {
  */
 async function queryDirectly(res, userId, question) {
     try {
-        // Step 1: Search for relevant documents (user-namespaced)
-        const searchResults = await searchDocuments(userId, question, 5);
+        // Step 1: Pre-fetch accessible shared namespaces for this user
+        let sharedNamespaces = [];
+        try {
+            sharedNamespaces = await getAccessibleNamespacesForAI(userId);
+        } catch (shareErr) {
+            console.error('   ⚠️ Failed to load shared namespaces:', shareErr.message);
+        }
+
+        // Step 2: Search for relevant documents (user-namespaced + shared)
+        const searchResults = await searchDocuments(userId, question, 5, sharedNamespaces);
 
         if (searchResults.length === 0) {
             return res.json({
                 success: true,
-                answer: "I couldn't find this information in your uploaded documents.\n\nI searched through all your documents but couldn't find relevant content to answer this question. This could mean:\n\n• The information might not be in your uploaded files\n• Try rephrasing your question\n• Upload additional documents that contain this information\n\n**Note:** I only search through YOUR documents and never use external knowledge.",
+                answer: "I couldn't find this information in your uploaded or shared documents.\n\nI searched through all the documents you have access to but couldn't find relevant content to answer this question. This could mean:\n\n• The information might not be in your files\n• Try rephrasing your question\n• Upload additional documents that contain this information\n\n**Note:** I only search through documents you own or that have been shared with you.",
                 sources: []
             });
         }
@@ -163,6 +176,11 @@ async function queryViaN8N(req, res, userId, question) {
 
         if (!response.ok) {
             throw new Error(`n8n webhook returned status ${response.status}: ${responseText}`);
+        }
+
+        // If n8n returns an array (e.g. from the last node output), extract the first item
+        if (Array.isArray(data) && data.length > 0) {
+            data = data[0];
         }
 
         console.log('   ✅ Received response from n8n');

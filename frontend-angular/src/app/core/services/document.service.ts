@@ -47,6 +47,7 @@ export interface Document {
 
     // Thumbnail (Google Drive-style preview stored in S3)
     thumbnailUrl?: string;    // Legacy local thumbnail
+    thumbnailStatus?: 'processing' | 'ready' | 'failed'; // Status indicator
     previewUrl?: string;      // S3-stored preview URL
     previewPath?: string;     // S3 preview key
     previewGenerated?: boolean;
@@ -119,6 +120,18 @@ export class DocumentService {
     }
 
     /**
+     * Unified Dashboard Data Fetch (ONLY for summary display)
+     */
+    async getUserDashboardData(): Promise<any> {
+        try {
+            return await this.http.get<any>(`${this.secureDocumentsUrl}/dashboard`).toPromise();
+        } catch (error) {
+            console.error('Failed to load dashboard data:', error);
+            return { success: false, stats: {}, recentDocuments: [] };
+        }
+    }
+
+    /**
      * Upload a document to secure endpoint
      * 
      * SECURITY:
@@ -129,9 +142,12 @@ export class DocumentService {
      * 
      * ❌ DO NOT send userId in the request - server derives it from token
      */
-    uploadDocument(file: File): Observable<Document | null> {
+    uploadDocument(file: File, parentFolderId: string | null = null): Observable<Document | null> {
         const formData = new FormData();
         formData.append('file', file);
+        // Explicitly append parentFolderId (use empty string for root)
+        formData.append('parentFolderId', parentFolderId || '');
+
 
         // SECURITY: Do NOT include userId in formData
         // The server extracts it from the verified Firebase token
@@ -193,7 +209,7 @@ export class DocumentService {
                 } else if (error.status === 0) {
                     errorMessage = 'Cannot connect to server. Is the backend running?';
                 } else if (error.status === 413) {
-                    errorMessage = 'File too large. Maximum size is 10MB.';
+                    errorMessage = 'File too large. Maximum size is 50MB.';
                 }
 
                 this._uploadProgress.set({
@@ -209,6 +225,19 @@ export class DocumentService {
     }
 
     /**
+     * Create a new folder
+     */
+    createFolder(name: string, parentFolderId: string | null = null): Observable<any> {
+        return this.http.post(`${this.secureDocumentsUrl}/folder`, { name, parentFolderId }).pipe(
+            tap((response: any) => {
+                if (response.success && response.document) {
+                    this._documents.update(docs => [response.document, ...docs]);
+                }
+            })
+        );
+    }
+
+    /**
      * Toggle star status
      */
     toggleStar(documentId: string, isStarred: boolean): Observable<any> {
@@ -218,6 +247,54 @@ export class DocumentService {
         );
 
         return this.http.patch(`${this.secureDocumentsUrl}/${documentId}`, { isStarred });
+    }
+
+    /**
+     * Update trash status
+     */
+    updateTrashStatus(documentId: string, isTrashed: boolean): Observable<any> {
+        // Optimistic update
+        this._documents.update(docs =>
+            docs.map(d => d.documentId === documentId ? { ...d, isTrashed } : d)
+        );
+
+        return this.http.patch(`${this.secureDocumentsUrl}/${documentId}`, { isTrashed });
+    }
+
+    /**
+     * Rename document
+     */
+    renameDocument(documentId: string, fileName: string): Observable<any> {
+        // Optimistic update
+        this._documents.update(docs =>
+            docs.map(d => d.documentId === documentId ? { ...d, fileName } : d)
+        );
+
+        return this.http.patch(`${this.secureDocumentsUrl}/${documentId}`, { fileName });
+    }
+
+    /**
+     * Move document to a folder
+     */
+    moveDocument(documentId: string, parentFolderId: string | null): Observable<any> {
+        // Optimistic update
+        this._documents.update(docs =>
+            docs.map(d => d.documentId === documentId ? { ...d, parentFolderId } : d)
+        );
+
+        return this.http.patch(`${this.secureDocumentsUrl}/${documentId}`, { parentFolderId });
+    }
+
+    /**
+     * Make a copy of a document
+     */
+    copyDocument(documentId: string, targetFolderId: string | null = null): Observable<any> {
+        return this.http.post(`${this.secureDocumentsUrl}/${documentId}/copy`, { targetFolderId }).pipe(
+            tap(() => {
+                // Refresh list after copy because it's a completely new file
+                this.loadDocuments();
+            })
+        );
     }
 
     /**
@@ -332,6 +409,7 @@ export class DocumentService {
      * Format file size for display
      */
     formatFileSize(bytes: number): string {
+        if (bytes === undefined || bytes === null || isNaN(bytes)) return '--';
         if (bytes === 0) return '0 Bytes';
 
         const k = 1024;

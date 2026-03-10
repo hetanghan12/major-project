@@ -7,12 +7,13 @@
  * @author CloudAI Team
  */
 
-import { Component, OnInit, ViewChild, ElementRef, AfterViewChecked, signal, effect } from '@angular/core';
+import { Component, OnInit, ViewChild, ElementRef, signal, effect, ViewEncapsulation } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { ChatService, ChatMessage } from '../core/services/chat.service';
 import { DocumentService } from '../core/services/document.service';
+import { marked } from 'marked';
 
 interface ChatSession {
   id: string;
@@ -76,9 +77,9 @@ interface ChatSession {
                 </svg>
               </div>
               <div>
-                <h2 class="font-semibold" style="color: white;">Smart AI Assistant</h2>
-                <div class="flex items-center gap-2 text-sm text-emerald-400">
-                  <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                <h2 class="font-semibold text-slate-900">Smart AI Assistant</h2>
+                <div class="flex items-center gap-2 text-sm text-emerald-500 font-medium">
+                  <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
                   Ready
                 </div>
               </div>
@@ -150,13 +151,13 @@ interface ChatSession {
               <p class="text-sm opacity-80 mb-4">
                 All your data is stored <strong>locally in your browser</strong> by your username - completely private and FREE!
               </p>
-              <div class="p-3 rounded-lg" style="background: rgba(255,255,255,0.1);">
-                <p class="text-sm font-medium mb-2">Try these commands:</p>
-                <p class="text-sm opacity-80">- Type <strong>"scan:"</strong> followed by any text to save it</p>
-                <p class="text-sm opacity-80">- Type <strong>"search:"</strong> followed by keywords to find saved content</p>
-                <p class="text-sm opacity-80">- Ask any question and I'll search your knowledge base!</p>
+              <div class="p-4 rounded-xl mt-4 bg-slate-50 border border-slate-100">
+                <p class="text-sm font-semibold mb-2">Try these commands:</p>
+                <p class="text-sm text-slate-600">- Type <strong>"scan:"</strong> followed by any text to save it</p>
+                <p class="text-sm text-slate-600">- Type <strong>"search:"</strong> followed by keywords to find saved content</p>
+                <p class="text-sm text-slate-600">- Ask any question and I'll search your knowledge base!</p>
               </div>
-              <p class="text-xs opacity-50 mt-3">{{ getCurrentTime() }}</p>
+              <p class="text-xs text-slate-400 mt-3">{{ getCurrentTime() }}</p>
             </div>
 
             <!-- Messages -->
@@ -185,15 +186,15 @@ interface ChatSession {
                       <!-- Loading indicator -->
                       <div *ngIf="message.isLoading" class="flex items-center gap-3">
                         <div class="flex gap-1">
-                          <div class="w-2 h-2 rounded-full animate-bounce" style="background: white; animation-delay: 0ms;"></div>
-                          <div class="w-2 h-2 rounded-full animate-bounce" style="background: white; animation-delay: 150ms;"></div>
-                          <div class="w-2 h-2 rounded-full animate-bounce" style="background: white; animation-delay: 300ms;"></div>
+                          <div class="w-2 h-2 rounded-full animate-bounce" style="background: #6366f1; animation-delay: 0ms;"></div>
+                          <div class="w-2 h-2 rounded-full animate-bounce" style="background: #6366f1; animation-delay: 150ms;"></div>
+                          <div class="w-2 h-2 rounded-full animate-bounce" style="background: #6366f1; animation-delay: 300ms;"></div>
                         </div>
-                        <span class="text-sm opacity-80">Searching your documents...</span>
+                        <span class="text-sm text-slate-500">Searching your documents...</span>
                       </div>
                       <!-- Message content -->
                       <div *ngIf="!message.isLoading" class="prose prose-sm max-w-none">
-                        <div [innerHTML]="formatMessage(message.content)"></div>
+                        <div [innerHTML]="formatMessage(message.id, message.content)"></div>
                       </div>
                     </div>
                     <!-- Sources -->
@@ -212,7 +213,7 @@ interface ChatSession {
           </div>
 
           <!-- Saved Items Counter -->
-          <div class="px-6 py-2 flex items-center gap-2 text-sm" style="color: rgba(255,255,255,0.6);">
+          <div class="px-6 py-2 flex items-center gap-2 text-sm text-slate-500 font-medium">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
             </svg>
@@ -289,6 +290,7 @@ interface ChatSession {
       display: block;
       height: calc(100vh - 64px);
       margin: -24px;
+      color: #0f172a;
     }
     
     .chat-container {
@@ -298,21 +300,22 @@ interface ChatSession {
     .chat-wrapper {
       display: flex;
       height: 100%;
+      background-color: #f8fafc;
     }
     
     .chat-sidebar-panel {
-      width: 240px;
+      width: 260px;
       display: flex;
       flex-direction: column;
-      background: linear-gradient(180deg, #1E1B4B 0%, #312E81 100%);
-      border-right: 1px solid rgba(255, 255, 255, 0.1);
+      background: #ffffff;
+      border-right: 1px solid #e2e8f0;
     }
     
     .chat-main-panel {
       flex: 1;
       display: flex;
       flex-direction: column;
-      background: linear-gradient(180deg, #312E81 0%, #4338CA 100%);
+      background: #f8fafc;
     }
     
     .chat-header-panel {
@@ -320,7 +323,8 @@ interface ChatSession {
       align-items: center;
       justify-content: space-between;
       padding: 16px 24px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      background: #ffffff;
+      border-bottom: 1px solid #e2e8f0;
     }
     
     .chat-header-avatar {
@@ -330,19 +334,19 @@ interface ChatSession {
       display: flex;
       align-items: center;
       justify-content: center;
-      background: linear-gradient(135deg, #5B4EE8 0%, #8B5CF6 100%);
+      background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
     }
     
     .chat-header-btn {
       padding: 8px;
       border-radius: 8px;
-      color: rgba(255, 255, 255, 0.6);
+      color: #64748b;
       transition: all 0.2s;
     }
     
     .chat-header-btn:hover {
-      background: rgba(255, 255, 255, 0.1);
-      color: white;
+      background: #f1f5f9;
+      color: #0f172a;
     }
     
     .chat-messages-panel {
@@ -352,18 +356,21 @@ interface ChatSession {
     }
     
     .chat-welcome-message {
-      background: rgba(255, 255, 255, 0.1);
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
       border-radius: 16px;
-      padding: 20px;
-      color: white;
+      padding: 24px;
+      color: #0f172a;
+      box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
     }
     
     .chat-message-user {
-      background: linear-gradient(135deg, #5B4EE8 0%, #8B5CF6 100%);
+      background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
       color: white;
       padding: 12px 16px;
       border-radius: 16px 16px 4px 16px;
       max-width: 80%;
+      box-shadow: 0 4px 6px -1px rgb(99 102 241 / 0.2);
     }
     
     .chat-ai-avatar {
@@ -373,16 +380,18 @@ interface ChatSession {
       display: flex;
       align-items: center;
       justify-content: center;
-      background: linear-gradient(135deg, #5B4EE8 0%, #8B5CF6 100%);
+      background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
       flex-shrink: 0;
     }
     
     .chat-message-ai {
-      background: rgba(255, 255, 255, 0.1);
-      color: white;
+      background: #ffffff;
+      color: #0f172a;
       padding: 12px 16px;
       border-radius: 16px 16px 16px 4px;
       max-width: 100%;
+      border: 1px solid #e2e8f0;
+      box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
     }
     
     .chat-actions-panel {
@@ -400,37 +409,44 @@ interface ChatSession {
       border-radius: 9999px;
       font-size: 14px;
       font-weight: 500;
-      background: rgba(255, 255, 255, 0.1);
-      color: white;
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      color: #475569;
       transition: all 0.2s;
     }
     
     .chat-action-btn:hover {
-      background: rgba(255, 255, 255, 0.2);
+      background: #f8fafc;
+      color: #0f172a;
+      border-color: #cbd5e1;
     }
     
     .chat-input-panel {
       padding: 16px 24px;
-      border-top: 1px solid rgba(255, 255, 255, 0.1);
+      background: #ffffff;
+      border-top: 1px solid #e2e8f0;
     }
     
     .chat-input {
       width: 100%;
       padding: 14px 16px;
-      background: rgba(255, 255, 255, 0.1);
-      border: 1px solid rgba(255, 255, 255, 0.2);
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
       border-radius: 12px;
-      color: white;
+      color: #0f172a;
       font-size: 14px;
+      transition: all 0.2s;
     }
     
     .chat-input::placeholder {
-      color: rgba(255, 255, 255, 0.5);
+      color: #94a3b8;
     }
     
     .chat-input:focus {
       outline: none;
-      border-color: rgba(255, 255, 255, 0.4);
+      border-color: #6366f1;
+      background: #ffffff;
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
     }
     
     .chat-send-btn {
@@ -440,13 +456,13 @@ interface ChatSession {
       display: flex;
       align-items: center;
       justify-content: center;
-      background: linear-gradient(135deg, #5B4EE8 0%, #8B5CF6 100%);
+      background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
       color: white;
       transition: all 0.2s;
     }
     
     .chat-send-btn:hover:not(:disabled) {
-      box-shadow: 0 4px 12px rgba(91, 78, 232, 0.4);
+      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
     }
     
     .chat-send-btn:disabled {
@@ -459,20 +475,21 @@ interface ChatSession {
       border-radius: 12px;
       cursor: pointer;
       transition: all 0.2s;
+      color: #334155;
     }
     
     .chat-history-item:hover {
-      background: rgba(255, 255, 255, 0.1);
+      background: #f1f5f9;
     }
     
     .chat-history-item.active {
-      background: linear-gradient(135deg, #5B4EE8 0%, #8B5CF6 100%);
+      background: #e0e7ff;
+      color: #4338ca;
     }
     
     .chat-history-title {
       font-weight: 500;
       font-size: 14px;
-      color: white;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -480,12 +497,12 @@ interface ChatSession {
     
     .chat-history-meta {
       font-size: 12px;
-      color: rgba(255, 255, 255, 0.6);
+      color: #64748b;
       margin-top: 2px;
     }
   `]
 })
-export class ChatComponent implements OnInit, AfterViewChecked {
+export class ChatComponent implements OnInit {
   @ViewChild('chatContainer') chatContainer!: ElementRef;
   @ViewChild('messageInput') messageInput!: ElementRef;
 
@@ -496,7 +513,7 @@ export class ChatComponent implements OnInit, AfterViewChecked {
     { id: '1', title: 'Conversation 30/12/2025', date: 'Yesterday', messageCount: 8 },
   ]);
   selectedChatId = signal<string | null>('1');
-  private shouldScrollToBottom = true;
+  private parsedMessageCache = new Map<string, string>();
 
   constructor(
     public chatService: ChatService,
@@ -513,12 +530,14 @@ export class ChatComponent implements OnInit, AfterViewChecked {
 
   ngOnInit(): void {
     this.loadDocumentCount();
-  }
-
-  ngAfterViewChecked(): void {
-    if (this.shouldScrollToBottom) {
-      this.scrollToBottom();
-    }
+    // Use an effect to cleanly listen for message array size changes and trigger a single forced scroll
+    effect(() => {
+      const msgs = this.chatService.messages();
+      if (msgs.length > 0) {
+        // Wait for the DOM to update with the new messages before scrolling
+        setTimeout(() => this.scrollToBottom(), 50);
+      }
+    });
   }
 
   async loadDocumentCount(): Promise<void> {
@@ -573,7 +592,7 @@ export class ChatComponent implements OnInit, AfterViewChecked {
     if (!question) return;
 
     this.userMessage = '';
-    this.shouldScrollToBottom = true;
+
     await this.chatService.sendMessage(question);
   }
 
@@ -594,19 +613,37 @@ export class ChatComponent implements OnInit, AfterViewChecked {
     return now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }).toLowerCase();
   }
 
-  formatMessage(content: string): string {
-    return content
-      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-      .replace(/`(.*?)`/g, '<code style="background: rgba(255, 255, 255, 0.2); padding: 2px 6px; border-radius: 4px;">$1</code>')
-      .replace(/\n/g, '<br>')
-      .replace(/^- (.*)/gm, '<li>$1</li>')
-      .replace(/(<li>.*<\/li>)/s, '<ul style="margin: 8px 0; padding-left: 20px;">$1</ul>');
+  formatMessage(id: string, content: string): string {
+    if (!content) return '';
+
+    // Memoization: if already parsed this specific message ID and content is the same, return cached.
+    const cacheKey = `${id}_${content.length}`;
+    if (this.parsedMessageCache.has(cacheKey)) {
+      return this.parsedMessageCache.get(cacheKey)!;
+    }
+
+    try {
+      // In case n8n returned a string with literal string characters "\n" instead of actual newlines
+      const processedContent = content.replace(/\\n/g, '\n');
+      const parsed = marked.parse(processedContent) as string;
+      this.parsedMessageCache.set(cacheKey, parsed);
+      return parsed;
+    } catch (e) {
+      console.error('Markdown parsing error:', e);
+      const fallback = content.replace(/\\n/g, '<br/>').replace(/\n/g, '<br/>');
+      this.parsedMessageCache.set(cacheKey, fallback);
+      return fallback;
+    }
   }
 
   private scrollToBottom(): void {
     if (this.chatContainer) {
       const element = this.chatContainer.nativeElement;
-      element.scrollTop = element.scrollHeight;
+      // Use smooth scroll to avoid abrupt jumping
+      element.scrollTo({
+        top: element.scrollHeight,
+        behavior: 'smooth'
+      });
     }
   }
 }

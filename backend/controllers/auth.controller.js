@@ -8,7 +8,10 @@
 
 const { getAuth } = require('../config/firebase.config');
 const { createOrUpdateUser, getUser } = require('../services/firestore.service');
+const { getFirestore } = require('../config/firebase.config');
+const { activatePendingShares } = require('../services/share.service');
 const { asyncHandler, ApiError } = require('../middlewares/error.middleware');
+const { logSecurityEvent, trackNewUser } = require('../services/analytics.service');
 
 /**
  * Verify Firebase ID token and return user info
@@ -43,12 +46,41 @@ const verifyToken = asyncHandler(async (req, res) => {
  * GET /api/auth/profile
  */
 const getProfile = asyncHandler(async (req, res) => {
-    const { uid } = req.user;
+    const { uid, email, name, picture } = req.user;
 
-    const userProfile = await getUser(uid);
+    let userProfile = await getUser(uid);
 
+    // If profile doesn't exist in Firestore yet (e.g. sync pending), 
+    // construct a virtual profile from Firebase Auth data
     if (!userProfile) {
-        throw new ApiError(404, 'User profile not found');
+        userProfile = {
+            uid,
+            email,
+            displayName: name || null,
+            photoURL: picture || null,
+            createdAt: new Date().toISOString()
+        };
+    }
+
+    // Ensure role is set — check ADMIN_EMAIL env or Firestore role  
+    if (!userProfile.role) {
+        if (process.env.ADMIN_EMAIL && email === process.env.ADMIN_EMAIL) {
+            userProfile.role = 'Admin';
+
+            // Persist the role to Firestore so future lookups work (if quota allows)
+            try {
+                const firestore = getFirestore();
+                await firestore.collection('users').doc(uid).set({ role: 'Admin' }, { merge: true });
+            } catch (error) {
+                if (error.code === 8 || error.message.includes('Quota')) {
+                    console.warn(`⚠️  [QUOTA] Exceeded while assigning Admin role to ${email}. Setting role virtually.`);
+                } else {
+                    console.error('Failed to set Admin role in Firestore:', error);
+                }
+            }
+        } else {
+            userProfile.role = 'User';
+        }
     }
 
     res.json({
@@ -104,6 +136,9 @@ const createTestUser = asyncHandler(async (req, res) => {
                 displayName: newUser.displayName
             });
 
+            // Track new user in aggregated stats
+            trackNewUser().catch(err => console.error('trackNewUser failed:', err.message));
+
             console.log('✅ Test user created:', newUser.uid);
 
             res.status(201).json({
@@ -140,11 +175,18 @@ const syncUser = asyncHandler(async (req, res) => {
     console.log(`🔄 Syncing user: ${email} (${uid})`);
 
     // Update user profile in Firestore
+    const existingProfile = await getUser(uid);
+    const isNewUser = !existingProfile;
     const userProfile = await createOrUpdateUser(uid, {
         email,
         displayName: name,
         photoURL: picture
     });
+
+    // Track new user in aggregated stats (non-blocking)
+    if (isNewUser) {
+        trackNewUser().catch(err => console.error('trackNewUser failed:', err.message));
+    }
 
     // Initialize/verify user's Pinecone namespace
     // Each user gets their own isolated namespace (namespace = userId)
@@ -159,6 +201,26 @@ const syncUser = asyncHandler(async (req, res) => {
         console.log(`   ⚠️ User can still use the app, namespace will be created on first document upload`);
     }
 
+    // Reset login failures for this email
+    try {
+        const firestore = getFirestore();
+        await firestore.collection('login_locks').doc(email).delete();
+
+        // ==========================================
+        // Log to NEW security_logs collection
+        // ==========================================
+        await logSecurityEvent({
+            eventType: 'LOGIN_SUCCESS',
+            userId: uid,
+            email: email,
+            ipAddress: req.ip || req.connection.remoteAddress,
+            action: `User ${email} logged in successfully`,
+            status: 'SUCCESS'
+        });
+    } catch (e) {
+        console.error('Failed to clear login locks or log audit:', e);
+    }
+
     res.json({
         success: true,
         message: 'User synced successfully',
@@ -167,13 +229,101 @@ const syncUser = asyncHandler(async (req, res) => {
             namespace: pineconeNamespace.namespace,
             vectorCount: pineconeNamespace.vectorCount,
             exists: pineconeNamespace.exists
-        } : null
+        } : null,
+        pendingSharesActivated: 0
     });
+
+    // Activate pending shares in the background (don't block the response)
+    activatePendingShares(uid, email).then(count => {
+        if (count > 0) {
+            console.log(`   📬 Activated ${count} pending shares for ${email}`);
+        }
+    }).catch(err => {
+        console.error(`   ⚠️ Pending share activation failed: ${err.message}`);
+    });
+});
+
+/**
+ * Record failed login attempt, lock if maxAttempts reached
+ * POST /api/auth/fail
+ */
+const failLogin = asyncHandler(async (req, res) => {
+    const { email } = req.body;
+    if (!email) throw new ApiError(400, 'Email is required');
+
+    const firestore = getFirestore();
+    const settingsDoc = await firestore.collection('system_settings').doc('global').get();
+    const maxAttempts = settingsDoc.exists ? (settingsDoc.data().maxLoginAttempts || 5) : 5;
+    const sessionTimeout = settingsDoc.exists ? (settingsDoc.data().sessionTimeout || 60) : 60; // in minutes
+
+    const lockRef = firestore.collection('login_locks').doc(email);
+    const lockDoc = await lockRef.get();
+
+    let failures = 1;
+
+    if (lockDoc.exists) {
+        failures = (lockDoc.data().failures || 0) + 1;
+    }
+
+    const updates = {
+        email,
+        failures,
+        lastFailure: new Date().toISOString(),
+        ip: req.ip || req.connection.remoteAddress
+    };
+
+    // Log LOGIN_FAILED to security_logs
+    const { logSecurityEvent } = require('../services/analytics.service');
+    await logSecurityEvent({
+        eventType: 'LOGIN_FAILED',
+        userId: 'N/A',
+        email: email,
+        ipAddress: req.ip || req.connection.remoteAddress,
+        action: `Failed login attempt for ${email} (Failures: ${failures})`,
+        status: 'FAILED'
+    });
+
+    if (failures >= maxAttempts) {
+        updates.lockedUntil = new Date(Date.now() + sessionTimeout * 60000).toISOString();
+    }
+
+    await lockRef.set(updates, { merge: true });
+
+    res.json({ success: true, message: 'Failed login recorded', locked: failures >= maxAttempts });
+});
+
+/**
+ * Return lock status for a given email
+ * GET /api/auth/lockout-status/:email
+ */
+const getLockoutStatus = asyncHandler(async (req, res) => {
+    const { email } = req.params;
+    if (!email) throw new ApiError(400, 'Email is required');
+
+    const firestore = getFirestore();
+    const lockDoc = await firestore.collection('login_locks').doc(email).get();
+
+    if (!lockDoc.exists) {
+        return res.json({ success: true, locked: false });
+    }
+
+    const data = lockDoc.data();
+    if (data.lockedUntil && new Date(data.lockedUntil).getTime() > Date.now()) {
+        return res.json({
+            success: true,
+            locked: true,
+            lockedUntil: data.lockedUntil
+        });
+    }
+
+    return res.json({ success: true, locked: false });
 });
 
 module.exports = {
     verifyToken,
     getProfile,
     createTestUser,
-    syncUser
+    syncUser,
+    failLogin,
+    getLockoutStatus
 };

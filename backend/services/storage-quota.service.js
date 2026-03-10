@@ -44,93 +44,83 @@ const DEFAULT_STORAGE_LIMIT = 5 * 1024 * 1024 * 1024; // 5368709120 bytes
  * @returns {Object} Storage stats
  */
 async function getUserStorageStats(userId) {
-    console.log(`📊 Calculating storage for user: ${userId}`);
-
     const db = getFirestore();
-
     try {
-        // Get user document for storage limit
         const userDoc = await db.collection(USERS_COLLECTION).doc(userId).get();
-        let storageLimit = DEFAULT_STORAGE_LIMIT;
+        const data = userDoc.exists ? userDoc.data() : {};
 
-        if (userDoc.exists && userDoc.data().storageLimitBytes) {
-            storageLimit = userDoc.data().storageLimitBytes;
+        let storageLimit = data.storageLimitBytes || DEFAULT_STORAGE_LIMIT;
+        let storageUsed = data.totalStorageUsedBytes || 0;
+        let fileCount = data.totalFilesCount || 0;
+
+        // If stats are missing (legacy user or first time), trigger a one-time re-calculation
+        if (data.totalFilesCount === undefined) {
+            console.log(`📊 [RE-CALC] Initializing stats for user: ${userId}`);
+            const realStats = await recalibrateUserStats(userId);
+            storageUsed = realStats.storageUsed;
+            fileCount = realStats.fileCount;
         }
 
-        // Calculate REAL storage used from documents
-        // Try composite query first, fall back to filtering in-memory if index not created
-        let docsSnapshot;
-        let useInMemoryFilter = false;
+        const percentUsed = storageLimit > 0 ? Math.min(Math.round((storageUsed / storageLimit) * 100), 100) : 0;
 
-        try {
-            // Try the optimized query with composite index
-            docsSnapshot = await db.collection(DOCUMENTS_COLLECTION)
-                .where('userId', '==', userId)
-                .where('status', '==', 'ready')
-                .get();
-        } catch (queryError) {
-            // If composite index doesn't exist, fall back to simpler query
-            console.log(`   ⚠️ Composite query failed, using in-memory filter: ${queryError.message}`);
-            docsSnapshot = await db.collection(DOCUMENTS_COLLECTION)
-                .where('userId', '==', userId)
-                .get();
-            useInMemoryFilter = true;
-        }
-
-        let storageUsed = 0;
-        let fileCount = 0;
-        const fileSizes = [];
-
-        docsSnapshot.forEach(doc => {
-            const data = doc.data();
-
-            // Filter by status='ready' in memory if needed
-            if (useInMemoryFilter && data.status !== 'ready') {
-                return; // Skip non-ready documents
-            }
-
-            const fileSize = data.fileSize || 0;
-            storageUsed += fileSize;
-            fileCount++;
-
-            console.log(`   📄 ${data.fileName}: ${formatBytes(fileSize)} (status: ${data.status})`);
-
-            fileSizes.push({
-                documentId: data.documentId,
-                fileName: data.fileName,
-                fileSize: fileSize,
-                status: data.status
-            });
-        });
-
-        // Calculate percentage
-        const percentUsed = storageLimit > 0
-            ? Math.min(Math.round((storageUsed / storageLimit) * 100), 100)
-            : 0;
-
-        // Format for display
-        const stats = {
+        return {
             storageUsedBytes: storageUsed,
             storageLimitBytes: storageLimit,
             storageUsedFormatted: formatBytes(storageUsed),
             storageLimitFormatted: formatBytes(storageLimit),
-            percentUsed: percentUsed,
-            fileCount: fileCount,
+            percentUsed,
+            fileCount,
             isNearLimit: percentUsed >= 80,
             isAtLimit: percentUsed >= 100,
-            availableBytes: Math.max(0, storageLimit - storageUsed),
-            availableFormatted: formatBytes(Math.max(0, storageLimit - storageUsed))
+            availableBytes: Math.max(0, storageLimit - storageUsed)
         };
-
-        console.log(`   ✅ Storage: ${stats.storageUsedFormatted} / ${stats.storageLimitFormatted} (${percentUsed}%)`);
-        console.log(`   📁 Files counted: ${fileCount}`);
-
-        return stats;
-
     } catch (error) {
-        console.error(`   ❌ Storage calculation failed: ${error.message}`);
-        console.error(error.stack);
-        throw error;
+        console.error(`❌ Storage check failed: ${error.message}`);
+        return { storageUsedBytes: 0, storageLimitBytes: DEFAULT_STORAGE_LIMIT, percentUsed: 0, fileCount: 0 };
+    }
+}
+
+/**
+ * Recalibrate user stats from actual document count (One-time or sync)
+ */
+async function recalibrateUserStats(userId) {
+    const db = getFirestore();
+    // Simple single-field query — no composite index needed
+    const snap = await db.collection(DOCUMENTS_COLLECTION).where('userId', '==', userId).limit(500).get();
+
+    let storageUsed = 0;
+    let fileCount = 0;
+    snap.forEach(doc => {
+        const data = doc.data();
+        // Only count documents that are ready and not trashed
+        if (data.status !== 'trash' && data.isTrashed !== true) {
+            storageUsed += (data.fileSize || 0);
+            fileCount++;
+        }
+    });
+
+    await db.collection(USERS_COLLECTION).doc(userId).set({
+        totalStorageUsedBytes: storageUsed,
+        totalFilesCount: fileCount,
+        statsUpdatedAt: new Date().toISOString()
+    }, { merge: true });
+
+    return { storageUsed, fileCount };
+}
+
+/**
+ * Increment user stats (Atomic)
+ */
+const admin = require('firebase-admin');
+async function incrementUserStats(userId, bytesUpdate = 0, countUpdate = 0) {
+    try {
+        const db = getFirestore();
+        await db.collection(USERS_COLLECTION).doc(userId).update({
+            totalStorageUsedBytes: admin.firestore.FieldValue.increment(bytesUpdate),
+            totalFilesCount: admin.firestore.FieldValue.increment(countUpdate)
+        });
+    } catch (e) {
+        console.warn(`Failed to increment user stats for ${userId}:`, e.message);
     }
 }
 
@@ -223,9 +213,10 @@ async function recalculateUserStorage(userId) {
 async function getStorageBreakdown(userId) {
     const db = getFirestore();
 
+    // Simple single-field query — no composite index needed
     const docsSnapshot = await db.collection(DOCUMENTS_COLLECTION)
         .where('userId', '==', userId)
-        .where('status', '==', 'ready')
+        .limit(500)
         .get();
 
     const breakdown = {
@@ -311,5 +302,6 @@ module.exports = {
     getStorageBreakdown,
     formatBytes,
     parseBytes,
+    incrementUserStats,
     DEFAULT_STORAGE_LIMIT
 };

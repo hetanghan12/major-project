@@ -40,6 +40,7 @@ const { deleteFromS3, fileExistsInS3 } = require('./s3.service');
 const { deleteDocument, getDocument, updateDocumentStatus } = require('./firestore.service');
 const { getPineconeIndex, deriveSecureNamespace } = require('../config/pinecone.config');
 const fs = require('fs');
+const { trackFileDeletion } = require('./analytics.service');
 
 // Audit logging for compliance
 const deletionLogs = [];
@@ -253,6 +254,10 @@ async function secureDeleteDocument(userId, documentId) {
             result.steps.metadata.message = 'Metadata deleted';
             console.log(`   ✅ Metadata deleted from Firestore`);
 
+            // 6️⃣ Track deletion for dashboard stats (Zero Reads)
+            trackFileDeletion(userId, document.fileSize || 0, document.fileType || '', document.fileName || '')
+                .catch(err => console.error('Deletion track failed:', err.message));
+
         } catch (error) {
             result.steps.metadata.success = false;
             result.steps.metadata.message = error.message;
@@ -444,15 +449,7 @@ async function logDeletionAttempt(operationId, userId, documentId, status, detai
     // 3. Send alerts for security violations
 }
 
-/**
- * Get deletion logs for a user (for admin/compliance)
- * 
- * @param {string} userId - User ID to get logs for
- * @returns {Array} Deletion logs for the user
- */
-function getDeletionLogs(userId) {
-    return deletionLogs.filter(log => log.userId === userId);
-}
+
 
 /**
  * Generate chunk IDs for a document
@@ -470,9 +467,51 @@ function generateChunkIds(documentId, chunkCount) {
     return ids;
 }
 
+/**
+ * Automatically clean up documents that have been in the trash for over 30 days
+ */
+async function autoDeleteTrash() {
+    console.log(`\n🧹 ========== RUNNING 30-DAY TRASH CLEANUP ==========`);
+    try {
+        const { getFirestore } = require('../config/firebase.config');
+        if (!getFirestore) return;
+
+        const db = getFirestore();
+        if (!db) return;
+
+        // Calculate the date 30 days ago
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        const thirtyDaysAgoISO = thirtyDaysAgo.toISOString();
+
+        // Grab all trashed documents
+        const snapshot = await db.collection('documents')
+            .where('isTrashed', '==', true)
+            .get();
+
+        let deletedCount = 0;
+
+        for (const doc of snapshot.docs) {
+            const data = doc.data();
+            // Fallback to uploadedAt if updatedAt is missing
+            const timeSinceTrash = data.updatedAt || data.uploadedAt || new Date().toISOString();
+
+            if (timeSinceTrash < thirtyDaysAgoISO) {
+                console.log(`   🗑️ Auto-deleting old trashed document: ${data.documentId || doc.id}`);
+                await secureDeleteDocument(data.userId, data.documentId || doc.id);
+                deletedCount++;
+            }
+        }
+
+        console.log(`✅ Auto-deleted ${deletedCount} old files from trash.`);
+    } catch (error) {
+        console.error('❌ Failed to run auto-delete cron:', error.message);
+    }
+}
+
 module.exports = {
     secureDeleteDocument,
     deletePineconeVectors,
-    getDeletionLogs,
-    generateChunkIds
+    generateChunkIds,
+    autoDeleteTrash
 };

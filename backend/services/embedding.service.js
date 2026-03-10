@@ -122,24 +122,49 @@ async function processAndStoreEmbeddings(userId, documentId, fileName, chunks) {
  * @param {string} query - Search query
  * @param {number} topK - Number of results to return
  */
-async function searchDocuments(userId, query, topK = 5) {
+async function searchDocuments(userId, query, topK = 5, sharedNamespaces = []) {
     console.log(`🔍 Searching documents for user: ${userId}`);
+    if (sharedNamespaces.length > 0) {
+        console.log(`   🔗 Including ${sharedNamespaces.length} shared namespaces`);
+    }
 
     try {
         // Generate embedding for the query
         const queryEmbedding = await generateEmbedding(query);
 
-        // Query Pinecone with user namespace
-        const results = await queryVectors(userId, queryEmbedding, topK);
+        // 1. Query Pinecone with user namespace (no filter needed)
+        let allResults = await queryVectors(userId, queryEmbedding, topK);
 
-        console.log(`   ✅ Found ${results.length} relevant chunks`);
+        // 2. Query shared namespaces (with documentId filter)
+        for (const ns of sharedNamespaces) {
+            if (!ns.ownerId || !ns.documentIds || ns.documentIds.length === 0) continue;
 
-        return results.map(match => ({
+            // Pinecone $in limit workaround (usually safe for nominal use cases)
+            const filter = { documentId: { $in: ns.documentIds } };
+
+            try {
+                const sharedResults = await queryVectors(ns.ownerId, queryEmbedding, topK, filter);
+                if (sharedResults.length > 0) {
+                    allResults = allResults.concat(sharedResults);
+                }
+            } catch (err) {
+                console.error(`   ⚠️ Failed to query shared namespace ${ns.ownerId}:`, err.message);
+            }
+        }
+
+        // 3. Sort combined results by score descending and take topK
+        allResults.sort((a, b) => b.score - a.score);
+        const topResults = allResults.slice(0, topK);
+
+        console.log(`   ✅ Found ${topResults.length} relevant chunks (combined)`);
+
+        return topResults.map(match => ({
             score: match.score,
             text: match.metadata?.text || '',
             documentId: match.metadata?.documentId || '',
             fileName: match.metadata?.fileName || '',
-            chunkIndex: match.metadata?.chunkIndex || 0
+            chunkIndex: match.metadata?.chunkIndex || 0,
+            isShared: match.metadata?.userId !== userId
         }));
 
     } catch (error) {

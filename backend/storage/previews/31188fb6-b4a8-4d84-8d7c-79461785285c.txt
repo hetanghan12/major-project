@@ -1,0 +1,78 @@
+HET ANGHAN
+
+Surat, Gujarat, India
+
+Phone: +91-XXXXXXXXXX | Email: your.email@example.com
+
+LinkedIn: linkedin.com/in/yourprofile | GitHub: github.com/yourusername
+
+Career Objective
+
+BCA student with hands-on experience in AI automation, LLM training, and RAG systems. Seeking an entry-level role to apply Python, AI workflows, and cloud technologies to build intelligent solutions.
+
+Technical Skills
+
+Languages: Python, JavaScript, TypeScript
+
+AI & ML: LLM Training, RAG, Whisper, Prompt Engineering
+
+Automation: n8n, API Integration
+
+Cloud & Tools: AWS S3, Firebase, Pinecone, Git
+
+Web: Angular, Node.js, Express
+
+Databases: Firestore, MongoDB
+
+Internship Experience
+
+AI Automation Intern — [Company Name]
+
+Month Year – Present
+
+- Built automation workflows using n8n.
+
+- Developed a RAG-based AI assistant for document Q&A.
+
+- Trained Whisper Large V3 for speech recognition.
+
+- Integrated APIs and vector databases.
+
+Projects
+
+AI Meeting Assistant
+
+- Converts meeting audio to text using Whisper.
+
+- Generates summaries using a RAG pipeline.
+
+- Automated with n8n workflows.
+
+AI Customer Support Automation
+
+- AI chatbot using document-based RAG.
+
+- Pinecone semantic search integration.
+
+Document AI Assistant
+
+- Upload documents and ask questions.
+
+- Embeddings-based retrieval for accurate answers.
+
+Education
+
+Bachelor of Computer Applications (BCA)
+
+[Your College Name] — Expected Graduation: 2026
+
+Strengths
+
+Problem-solving mindset, Quick learner, AI enthusiast, Team player
+
+Portfolio
+
+Scan QR code to view projects, GitHub repositories, and live demos.
+
+[ Leave space here for QR Code - Bottom Right ]
+

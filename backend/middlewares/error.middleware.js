@@ -81,7 +81,7 @@ function errorHandler(err, req, res, next) {
         statusCode = 400;
         switch (err.code) {
             case 'LIMIT_FILE_SIZE':
-                message = 'File too large. Maximum allowed size is 10MB.';
+                message = 'File too large. Maximum allowed size is 50MB.';
                 break;
             case 'LIMIT_FILE_COUNT':
                 message = 'Too many files. Only one file allowed per upload.';

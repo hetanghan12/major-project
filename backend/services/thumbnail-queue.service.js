@@ -77,7 +77,8 @@ function queueThumbnailJob({
     documentId,
     userId,
     fileType,
-    fileName
+    fileName,
+    s3Key
 }) {
     const jobId = `thumb_${documentId}_${Date.now()}`;
     const normalizedType = normalizeType(fileType, fileName);
@@ -89,6 +90,7 @@ function queueThumbnailJob({
         filePath,
         fileType,
         fileName,
+        s3Key,
         normalizedType,
         priority: PRIORITY[normalizedType] || PRIORITY.default,
         status: 'pending',
@@ -204,7 +206,8 @@ async function processJob(job) {
                 documentId: job.documentId,
                 userId: job.userId,
                 fileType: job.fileType,
-                fileName: job.fileName
+                fileName: job.fileName,
+                s3Key: job.s3Key
             }),
             timeout
         ]);
@@ -260,7 +263,9 @@ async function handleJobSuccess(job, result) {
             previewPath: result.previewPath,
             previewGenerated: true,
             previewGeneratedAt: new Date().toISOString(),
-            previewMethod: result.method
+            previewMethod: result.method,
+            thumbnailUrl: result.previewUrl,
+            thumbnailStatus: 'ready'
         });
         console.log(`   📝 Firestore updated with preview URL`);
     } catch (dbError) {
@@ -313,7 +318,8 @@ async function handleJobFailure(job, error) {
             previewUrl: null,
             previewError: error.message,
             previewFailed: true,
-            previewFailedAt: new Date().toISOString()
+            previewFailedAt: new Date().toISOString(),
+            thumbnailStatus: 'failed'
         });
     } catch { }
 }

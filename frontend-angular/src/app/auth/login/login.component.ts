@@ -17,6 +17,8 @@ import { Router, RouterLink, ActivatedRoute } from '@angular/router';
 import { AuthService, MfaLoginResult } from '../../core/services/auth.service';
 import { MultiFactorResolver } from 'firebase/auth';
 import { environment } from '../../../environments/environment';
+import { HttpClient } from '@angular/common/http';
+import { firstValueFrom } from 'rxjs';
 
 @Component({
   selector: 'app-login',
@@ -365,11 +367,33 @@ export class LoginComponent {
   constructor(
     private authService: AuthService,
     private router: Router,
-    private route: ActivatedRoute
+    private route: ActivatedRoute,
+    private http: HttpClient
   ) {
     this.route.queryParams.subscribe(params => {
       this.returnUrl = params['returnUrl'] || '/dashboard';
     });
+  }
+
+  private async redirectUser(): Promise<void> {
+    try {
+      const token = await this.authService.getToken();
+      if (!token) {
+        this.router.navigate(['/dashboard']);
+        return;
+      }
+      const res: any = await firstValueFrom(this.http.get(`${environment.apiUrl}/auth/profile`, {
+        headers: { Authorization: `Bearer ${token}` }
+      }));
+      const role = res.user?.role?.toLowerCase() || 'user';
+      if (role === 'admin' || res.user?.email === 'admin@cloudspace.com') {
+        this.router.navigate(['/admin/dashboard']);
+      } else {
+        this.router.navigateByUrl(this.returnUrl === '/login' ? '/dashboard' : this.returnUrl);
+      }
+    } catch (err) {
+      this.router.navigate(['/dashboard']);
+    }
   }
 
   fillTestCredentials(): void {
@@ -391,18 +415,17 @@ export class LoginComponent {
 
     try {
       // Use MFA-aware login
-      const result: MfaLoginResult = await this.authService.loginWithMfa(this.email, this.password);
+      const result = await this.authService.loginWithMfa(this.email, this.password);
 
-      if (result.mfaRequired && result.resolver) {
+      if (result.mfaRequired) {
         // MFA is required - show verification form
         console.log('🔐 MFA required - showing verification screen');
         this.mfaRequired.set(true);
-        this.mfaResolver = result.resolver;
         this.isLoading.set(false);
       } else if (result.user) {
         // Login successful (no MFA)
         console.log('✅ Login successful (no MFA)');
-        this.router.navigateByUrl(this.returnUrl);
+        await this.redirectUser();
       }
     } catch (err: any) {
       this.error.set(err.message || 'Login failed');
@@ -414,12 +437,6 @@ export class LoginComponent {
    * Verify MFA code and complete login
    */
   async verifyMfa(): Promise<void> {
-    if (!this.mfaResolver) {
-      this.error.set('Session expired. Please try logging in again.');
-      this.cancelMfa();
-      return;
-    }
-
     if (this.mfaCode.length !== 6) {
       this.error.set('Please enter a valid 6-digit code');
       return;
@@ -429,9 +446,9 @@ export class LoginComponent {
     this.error.set(null);
 
     try {
-      await this.authService.verifyTotpDuringLogin(this.mfaResolver, this.mfaCode);
+      await this.authService.verifyTotpCustomLogin(this.mfaCode);
       console.log('✅ MFA verification successful');
-      this.router.navigateByUrl(this.returnUrl);
+      await this.redirectUser();
     } catch (err: any) {
       this.error.set(err.message || 'Verification failed');
       this.mfaCode = ''; // Clear the code for retry
@@ -444,10 +461,10 @@ export class LoginComponent {
    */
   cancelMfa(): void {
     this.mfaRequired.set(false);
-    this.mfaResolver = null;
     this.mfaCode = '';
     this.error.set(null);
     this.password = ''; // Clear password for security
+    this.authService.cancelMfaLogin();
   }
 
   /**
@@ -460,7 +477,7 @@ export class LoginComponent {
     try {
       await this.authService.loginWithGoogle();
       console.log('✅ Google login successful');
-      this.router.navigateByUrl(this.returnUrl);
+      await this.redirectUser();
     } catch (err: any) {
       console.error('Expected error if popup closed:', err);
       // Don't show generic error if user just closed the popup

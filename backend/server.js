@@ -49,6 +49,25 @@ const xlsxPreviewRoutes = require('./routes/xlsx-preview.routes');
 // MFA Routes - Two-Factor Authentication with Google Authenticator
 const mfaRoutes = require('./routes/mfa.routes');
 
+// Settings Routes
+const settingsRoutes = require('./routes/settings.routes');
+
+// Share Routes - File/folder sharing
+const shareRoutes = require('./routes/share.routes');
+
+// Subscription Plans Routes
+const plansRoutes = require('./routes/plans.routes');
+
+// Admin Routes
+const adminRoutes = require('./routes/admin.routes');
+
+// N8N AI Webhook Routes
+const n8nRoutes = require('./routes/n8n.routes');
+
+// Analytics & Tracking Routes
+const analyticsRoutes = require('./routes/analytics.routes');
+
+
 // Error handler middleware
 const { errorHandler } = require('./middlewares/error.middleware');
 
@@ -475,13 +494,13 @@ async function deleteFromPinecone(documentId) {
 
 app.use(cors({
   origin: '*', // ALLOW ALL ORIGINS FOR DEBUGGING
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true
 }));
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use('/uploads', express.static(UPLOADS_DIR));
 
 // =============================================================================
@@ -514,7 +533,7 @@ const upload = multer({
       cb(new Error(`Invalid file type: ${file.mimetype}`), false);
     }
   },
-  limits: { fileSize: 10 * 1024 * 1024 }
+  limits: { fileSize: 50 * 1024 * 1024 }
 });
 
 // =============================================================================
@@ -729,6 +748,21 @@ app.use('/api/ai', aiRoutes);
 app.use('/api/secure/documents', secureDocumentRoutes);
 
 // =============================================================================
+// SHARE ROUTES (FILE/FOLDER SHARING)
+// =============================================================================
+//
+// Endpoints:
+//    POST   /api/secure/shares              - Create share(s)
+//    GET    /api/secure/shares/with-me      - Files shared with user
+//    GET    /api/secure/shares/by-me        - Files user shared
+//    GET    /api/secure/shares/resource/:id - All shares for a resource
+//    PATCH  /api/secure/shares/:id/permission - Change permission
+//    PATCH  /api/secure/shares/:id/revoke   - Revoke a share
+//    DELETE /api/secure/shares/resource/:id - Stop sharing (revoke all)
+//
+app.use('/api/secure/shares', shareRoutes);
+
+// =============================================================================
 // STORAGE & UPLOAD PROGRESS ROUTES
 // =============================================================================
 //
@@ -767,6 +801,35 @@ app.use('/api/xlsx', xlsxPreviewRoutes);
 // NOTE: Actual TOTP enrollment/verification happens on frontend via Firebase SDK
 //
 app.use('/api/auth/mfa', mfaRoutes);
+
+// =============================================================================
+// SETTINGS ROUTES
+// =============================================================================
+// Manage user settings like AI preferences, Storage settings, and account deletion
+app.use('/api/settings', settingsRoutes);
+
+
+
+// =============================================================================
+// ADMIN ROUTES
+// =============================================================================
+app.use('/api/admin', adminRoutes);
+
+// =============================================================================
+// N8N WEBHOOKS
+// =============================================================================
+app.use('/webhook', n8nRoutes);
+
+// =============================================================================
+// PLANS ROUTES
+// =============================================================================
+// Fetch subscription plans
+app.use('/api/plans', plansRoutes);
+
+// =============================================================================
+// ANALYTICS & MONITORING ROUTES
+// =============================================================================
+app.use('/api/analytics', analyticsRoutes);
 
 // =============================================================================
 // THUMBNAIL ROUTE - Google Drive-style document previews
@@ -888,7 +951,8 @@ app.post('/api/rendering/regenerate', async (req, res) => {
           documentId,
           userId,
           fileType: data.fileType,
-          fileName: data.fileName
+          fileName: data.fileName,
+          s3Key: data.s3Key
         });
         queued++;
         console.log(`   📋 Queued: ${data.fileName}`);
@@ -965,6 +1029,10 @@ function tryListenOnPort(port) {
   return new Promise((resolve, reject) => {
     const server = app.listen(port)
       .on('listening', () => {
+        // Initialize WebSockets upon HTTP server start
+        const { initWebSocket } = require('./services/websocket.service');
+        initWebSocket(server);
+
         resolve({ server, port });
       })
       .on('error', (err) => {
@@ -1078,6 +1146,16 @@ async function startServer() {
   // Start server with automatic port retry
   try {
     await startServerWithPortRetry(PORT, 10);
+
+    // Schedule 30-day trash cleanup to run once a day (every 24 hours)
+    const { autoDeleteTrash } = require('./services/deletion.service');
+    setInterval(() => {
+      autoDeleteTrash();
+    }, 24 * 60 * 60 * 1000);
+
+    // Also run it once immediately on startup
+    setTimeout(autoDeleteTrash, 5000); // Wait 5 seconds after startup
+
   } catch (error) {
     console.error('\n❌ FATAL: Could not start server');
     console.error(`   ${error.message}\n`);

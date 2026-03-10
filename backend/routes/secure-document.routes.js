@@ -37,20 +37,17 @@ const { verifyFirebaseToken } = require('../middlewares/auth.middleware');
 // Import services
 const { extractText, chunkText } = require('../services/textExtraction.service');
 const { processAndStoreEmbeddings, deleteDocumentEmbeddings } = require('../services/embedding.service');
-const {
-    saveDocument,
-    updateDocumentStatus,
-    updateDocument,
-    getUserDocuments,
-    getDocument,
-    deleteDocument
-} = require('../services/firestore.service');
+const { saveDocument, getUserDocuments, getDocument, updateDocumentStatus, updateDocument } = require('../services/firestore.service');
 
 // Import S3 service for cloud storage
 const { uploadToS3, getDownloadUrl, deleteFromS3, generateS3Key } = require('../services/s3.service');
 
 // Import SECURE deletion service - atomic deletion across all storage layers
 const { secureDeleteDocument } = require('../services/deletion.service');
+
+// Import share access middleware and cleanup
+const { checkDocumentAccess } = require('../middlewares/share-access.middleware');
+const { revokeSharesOnDelete } = require('../services/share.service');
 
 // Import storage quota service - for checking limits before upload
 const { checkStorageQuota, recalculateUserStorage } = require('../services/storage-quota.service');
@@ -69,18 +66,24 @@ const {
     hasPreview
 } = require('../services/docx-preview.service');
 
+// Import Dashboard Controller
+const { getUserDashboardData } = require('../controllers/user-dashboard.controller');
+
 // Import thumbnail queue service - for async Google Drive-style previews
 const { queueThumbnailJob } = require('../services/thumbnail-queue.service');
 
 // Import XLSX parser service - for spreadsheet preview generation
 const { parseXlsxFile } = require('../services/xlsx-parser.service');
 
+// Import Analytics Service
+const { logFileUpload, logSecurityEvent, trackFolderCreation } = require('../services/analytics.service');
+
 // =============================================================================
 // CONFIGURATION
 // =============================================================================
 
 const BASE_STORAGE_DIR = path.join(__dirname, '..', 'storage');
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
 const ALLOWED_MIME_TYPES = [
     'application/pdf',
@@ -90,7 +93,12 @@ const ALLOWED_MIME_TYPES = [
     'application/vnd.ms-excel',
     'application/vnd.openxmlformats-officedocument.presentationml.presentation',
     'application/vnd.ms-powerpoint',
-    'text/plain'
+    'text/plain',
+    'image/jpeg',
+    'image/png',
+    'audio/mpeg',
+    'audio/wav',
+    'audio/x-wav'
 ];
 
 
@@ -177,7 +185,7 @@ const fileFilter = (req, file, cb) => {
     if (ALLOWED_MIME_TYPES.includes(file.mimetype)) {
         cb(null, true);
     } else {
-        cb(new Error(`Invalid file type: ${file.mimetype}. Allowed: PDF, DOCX, TXT, Excel, PowerPoint`), false);
+        cb(new Error(`Invalid file type: ${file.mimetype}. Allowed: PDF, DOCX, TXT, Excel, PowerPoint, Image, Audio`), false);
     }
 };
 
@@ -215,7 +223,7 @@ router.post('/upload',
         const userId = req.user.uid;
         const email = req.user.email;
 
-        console.log(`\n📤 ========== SECURE UPLOAD ==========`);
+        console.log(`\n📤 ========== SECURE UPLOAD SERVER V2 ==========`);
         console.log(`   User: ${email} (${userId})`);
 
         if (!req.file) {
@@ -232,6 +240,9 @@ router.post('/upload',
         const localFilePath = req.file.path;
         const fileSize = req.file.size;
         const pineconeNamespace = userId;  // namespace = userId for isolation
+        // Normalize parentFolderId
+        const parentFolderId = req.body.parentFolderId === '' ? null : (req.body.parentFolderId || null);
+        console.log(`   📂 Target Folder: ${parentFolderId || 'Root (My Drive)'}`);
 
         console.log(`   Document ID: ${documentId}`);
         console.log(`   Upload ID: ${uploadId}`);
@@ -296,6 +307,7 @@ router.post('/upload',
                 fileName: originalFileName,
                 fileType,
                 fileSize: fileSize,
+                parentFolderId: parentFolderId,
                 storagePath: localFilePath,
                 publicUrl: '',  // Generate on download
                 pineconeNamespace,  // CRITICAL: Store for deletion
@@ -423,12 +435,29 @@ router.post('/upload',
             }
 
             // ============================================================
+            // STEP 5.5: Log to ANALYTICS and UPLOAD_ACTIVITY
+            // ============================================================
+            try {
+                await logFileUpload({
+                    userId,
+                    userEmail: email,
+                    fileName: originalFileName,
+                    fileType,
+                    fileSize,
+                    s3Key,
+                    ipAddress: req.ip || req.connection.remoteAddress
+                });
+            } catch (analyticsLogErr) {
+                console.error(`   ⚠️ Analytics logging failed: ${analyticsLogErr.message}`);
+            }
+
+            // ============================================================
             // STEP 6: Queue thumbnail generation (async - Google Drive style)
             // Thumbnail is generated in background and stored in S3
             // ============================================================
             let thumbnailJobId = null;
             try {
-                console.log(`   🖼️ Queuing thumbnail generation...`);
+                console.log(`   🖼️ Queuing thumbnail generation for S3 Key: ${s3Key}`);
                 thumbnailJobId = queueThumbnailJob({
                     filePath: null, // S3 Only - Thumbnail service needs update to handle S3 paths if needed, or disabled for now
                     documentId,
@@ -492,6 +521,7 @@ router.post('/upload',
                     s3Key,
                     s3Url,
                     thumbnailUrl: null,  // Thumbnail is generated asynchronously
+                    thumbnailStatus: 'processing', // Display placeholder
                     status: 'ready',
                     uploadedAt: new Date().toISOString()
                 }
@@ -526,6 +556,63 @@ router.post('/upload',
     }
 );
 
+/**
+ * Create a new folder
+ * POST /api/secure/documents/folder
+ * 
+ * SECURITY:
+ * - Requires valid Firebase token
+ * - Folder is created with userId from verified token
+ */
+router.post('/folder', verifyFirebaseToken, async (req, res) => {
+    try {
+        const userId = req.user.uid;
+        const { name } = req.body;
+        // Handle parent folder (normalize '' to null)
+        const parentFolderId = req.body.parentFolderId === '' ? null : (req.body.parentFolderId || null);
+        console.log(`   📂 Creating Folder in: ${parentFolderId || 'Root (My Drive)'}`);
+
+        if (!name) {
+            return res.status(400).json({ success: false, message: 'Folder name is required' });
+        }
+
+        const folderId = uuidv4();
+
+        const folderData = {
+            documentId: folderId,
+            userId,
+            fileName: name,
+            fileType: 'folder',
+            fileSize: 0,
+            isFolder: true,
+            parentFolderId: parentFolderId || null,
+            status: 'ready',
+            uploadedAt: new Date().toISOString()
+        };
+
+        await saveDocument(folderData);
+
+        // Track folder creation for dashboard stats
+        trackFolderCreation().catch(err => console.error('Folder track failed:', err.message));
+
+        console.log(`✅ Folder created: ${name} (${folderId}) for user ${userId}`);
+
+        res.status(201).json({
+            success: true,
+            document: folderData
+        });
+    } catch (error) {
+        console.error('Create folder error:', error);
+        res.status(500).json({ success: false, message: 'Failed to create folder' });
+    }
+});
+
+
+/**
+ * Unified User Dashboard Data (Optimized)
+ * GET /api/secure/documents/dashboard
+ */
+router.get('/dashboard', verifyFirebaseToken, getUserDashboardData);
 
 /**
  * List user's documents (SECURE)
@@ -539,29 +626,93 @@ router.post('/upload',
 router.get('/',
     verifyFirebaseToken,  // MANDATORY
     async (req, res) => {
-        // SECURITY: userId from verified token ONLY
         const userId = req.user.uid;
+        const { limit, lastDocId, filter } = req.query;
 
-        console.log(`📋 Listing documents for user: ${userId}`);
+        console.log(`📋 [DOCS] Listing documents for user: ${userId} (Filter: ${filter || 'all'})`);
 
         try {
-            // SECURITY: getUserDocuments filters by userId
-            // Query: WHERE userId == req.user.uid
-            const documents = await getUserDocuments(userId);
+            // 1. Fetch from Firestore
+            console.log(`   🔍 [DOCS] Querying Firestore...`);
+            const result = await getUserDocuments(userId, {
+                filter: filter || 'all'
+            });
 
-            console.log(`   ✅ Found ${documents.length} documents`);
+            if (!result || !result.documents) {
+                console.warn(`   ⚠️ [DOCS] Service returned null/empty result for ${userId}`);
+                return res.json({ success: true, count: 0, documents: [], pagination: { hasMore: false } });
+            }
+
+            console.log(`   ✅ [DOCS] Found ${result.documents.length} documents`);
+
+            // 2. Map S3 presigned URLs for thumbnails with HEAVY DEFENSIVE CHECKS
+            const mappedDocuments = await Promise.all(result.documents.map(async (doc) => {
+                try {
+                    // Start with doc.thumbnailUrl from Firestore
+                    let thumbnailUrl = doc.thumbnailUrl || null;
+
+                    // If we have a preview path OR an S3-format URL, generate a fresh signed URL
+                    const hasS3Thumbnail = thumbnailUrl && typeof thumbnailUrl === 'string' && (thumbnailUrl.includes('.s3.') || thumbnailUrl.includes('http'));
+
+                    if (doc.previewPath || hasS3Thumbnail) {
+                        try {
+                            let pathForSign = doc.previewPath;
+
+                            // If no previewPath but we have an S3 URL, try to extract the key
+                            if (!pathForSign && thumbnailUrl && typeof thumbnailUrl === 'string' && thumbnailUrl.startsWith('http')) {
+                                try {
+                                    const urlObj = new URL(thumbnailUrl);
+                                    pathForSign = urlObj.pathname.substring(1); // Remove leading slash
+                                } catch (urlErr) {
+                                    console.warn(`   ⚠️ [DOCS] Invalid thumbnail URL for doc ${doc.id}: ${thumbnailUrl}`);
+                                    pathForSign = null;
+                                }
+                            }
+
+                            if (pathForSign) {
+                                // Regenerate a fresh signed URL (1 hour)
+                                thumbnailUrl = await getDownloadUrl(pathForSign, 3600);
+                            }
+                        } catch (signErr) {
+                            console.warn(`   ⚠️ [DOCS] Thumbnail signing failed for ${doc.id}:`, signErr.message);
+                            // Fallback to original URL - don't crash the whole list!
+                        }
+                    }
+
+                    return {
+                        ...doc,
+                        id: doc.id || doc.documentId,
+                        thumbnailUrl: thumbnailUrl,
+                        // Ensure critical fields exist
+                        fileName: doc.fileName || 'Untitled File',
+                        fileType: doc.fileType || 'unknown',
+                        fileSize: doc.fileSize || 0,
+                        uploadedAt: doc.uploadedAt || doc.createdAt || new Date().toISOString()
+                    };
+                } catch (mapErr) {
+                    console.error(`   ❌ [DOCS] Failed to map document ${doc?.id || 'unknown'}:`, mapErr.message);
+                    return doc; // Return raw doc as last resort
+                }
+            }));
+
+            console.log(`   🚀 [DOCS] Sending ${mappedDocuments.length} mapped documents to client`);
 
             res.json({
                 success: true,
-                count: documents.length,
-                documents
+                count: mappedDocuments.length,
+                documents: mappedDocuments,
+                pagination: {
+                    lastDocId: result.lastDocId || null,
+                    hasMore: result.hasMore || false
+                }
             });
 
         } catch (error) {
-            console.error(`   ❌ List failed: ${error.message}`);
+            console.error(`   ❌ [DOCS] GET /api/secure/documents FATAL ERROR:`, error);
             res.status(500).json({
                 success: false,
-                message: 'Failed to list documents'
+                message: 'Internal server error while fetching documents. Please try again later.',
+                error: process.env.NODE_ENV === 'development' ? error.message : undefined
             });
         }
     }
@@ -578,8 +729,8 @@ router.get('/',
  */
 router.get('/:id',
     verifyFirebaseToken,  // MANDATORY
+    checkDocumentAccess(), // Sharing: owner OR active share
     async (req, res) => {
-        const userId = req.user.uid;
         const documentId = req.params.id;
 
         try {
@@ -589,15 +740,6 @@ router.get('/:id',
                 return res.status(404).json({
                     success: false,
                     message: 'Document not found'
-                });
-            }
-
-            // SECURITY: Ownership verification
-            if (document.userId !== userId) {
-                console.error(`🚨 SECURITY: User ${userId} tried to access document owned by ${document.userId}`);
-                return res.status(403).json({
-                    success: false,
-                    message: 'Access denied'
                 });
             }
 
@@ -612,6 +754,32 @@ router.get('/:id',
                     console.error('Failed to generate signed URL:', e.message);
                 }
             }
+
+            // Generate thumbnail signed URL
+            if (document.previewPath || (document.thumbnailUrl && typeof document.thumbnailUrl === 'string' && (document.thumbnailUrl.includes('.s3.') || document.thumbnailUrl.startsWith('http')))) {
+                try {
+                    let pathForSign = document.previewPath;
+                    if (!pathForSign && document.thumbnailUrl) {
+                        try {
+                            if (document.thumbnailUrl.startsWith('http')) {
+                                pathForSign = new URL(document.thumbnailUrl).pathname.substring(1);
+                            } else {
+                                pathForSign = document.thumbnailUrl;
+                            }
+                        } catch (e) {
+                            pathForSign = document.thumbnailUrl;
+                        }
+                    }
+                    if (pathForSign) {
+                        document.thumbnailUrl = await getDownloadUrl(pathForSign, 3600);
+                    }
+                } catch (e) {
+                    console.error('Failed to generate thumbnail URL:', e.message);
+                }
+            }
+
+            // Attach access info for frontend
+            document.accessInfo = req.accessInfo;
 
             res.json({
                 success: true,
@@ -638,8 +806,8 @@ router.get('/:id',
  */
 router.get('/:id/download',
     verifyFirebaseToken,  // MANDATORY
+    checkDocumentAccess('download'), // Sharing: requires 'download' permission
     async (req, res) => {
-        const userId = req.user.uid;
         const documentId = req.params.id;
         const viewMode = req.query.view === 'true';
         const returnJson = req.query.json === 'true';
@@ -651,15 +819,6 @@ router.get('/:id/download',
                 return res.status(404).json({
                     success: false,
                     message: 'Document not found'
-                });
-            }
-
-            // SECURITY: Ownership verification
-            if (document.userId !== userId) {
-                console.error(`🚨 SECURITY: User ${userId} tried to ${viewMode ? 'view' : 'download'} document owned by ${document.userId}`);
-                return res.status(403).json({
-                    success: false,
-                    message: 'Access denied'
                 });
             }
 
@@ -710,8 +869,8 @@ router.get('/:id/download',
  */
 router.get('/:id/view',
     verifyFirebaseToken,
+    checkDocumentAccess(), // Sharing: owner OR active share (view is minimum)
     async (req, res) => {
-        const userId = req.user.uid;
         const documentId = req.params.id;
 
         try {
@@ -721,15 +880,6 @@ router.get('/:id/view',
                 return res.status(404).json({
                     success: false,
                     message: 'Document not found'
-                });
-            }
-
-            // SECURITY: Ownership verification
-            if (document.userId !== userId) {
-                console.error(`🚨 SECURITY: User ${userId} tried to view document owned by ${document.userId}`);
-                return res.status(403).json({
-                    success: false,
-                    message: 'Access denied'
                 });
             }
 
@@ -809,8 +959,8 @@ router.get('/:id/view',
  */
 router.get('/:id/preview',
     verifyFirebaseToken,
+    checkDocumentAccess(), // Sharing: owner OR active share
     async (req, res) => {
-        const userId = req.user.uid;
         const documentId = req.params.id;
 
         try {
@@ -820,15 +970,6 @@ router.get('/:id/preview',
                 return res.status(404).json({
                     success: false,
                     message: 'Document not found'
-                });
-            }
-
-            // SECURITY: Ownership verification
-            if (document.userId !== userId) {
-                console.error(`🚨 SECURITY: User ${userId} tried to preview document owned by ${document.userId}`);
-                return res.status(403).json({
-                    success: false,
-                    message: 'Access denied'
                 });
             }
 
@@ -948,10 +1089,19 @@ router.delete('/:id',
             // ============================================================
             // STEP 2: PERFORM SECURE ATOMIC DELETION
             // ============================================================
-            const result = await secureDeleteDocument(documentId, userId);
+            const result = await secureDeleteDocument(userId, documentId);
 
             // ============================================================
-            // STEP 3: UPDATE STORAGE QUOTA
+            // STEP 3: REVOKE ALL SHARES FOR THIS DOCUMENT
+            // ============================================================
+            try {
+                await revokeSharesOnDelete(documentId);
+            } catch (shareErr) {
+                console.error(`   ⚠️ Share cleanup failed (non-blocking): ${shareErr.message}`);
+            }
+
+            // ============================================================
+            // STEP 4: UPDATE STORAGE QUOTA
             // ============================================================
             // Re-calculate storage just to be safe
             await recalculateUserStorage(userId);
@@ -1015,6 +1165,110 @@ router.patch('/:id',
         } catch (error) {
             console.error(`❌ Update failed: ${error.message}`);
             res.status(500).json({ success: false, message: error.message });
+        }
+    }
+);
+
+/**
+ * Make a copy of a document
+ * POST /api/secure/documents/:id/copy
+ */
+router.post('/:id/copy',
+    verifyFirebaseToken,
+    async (req, res) => {
+        const userId = req.user.uid;
+        const sourceDocId = req.params.id;
+
+        try {
+            // 1. Get original doc
+            const sourceDoc = await getDocument(sourceDocId);
+            if (!sourceDoc) return res.status(404).json({ success: false, message: 'Source not found' });
+            if (sourceDoc.userId !== userId) return res.status(403).json({ success: false, message: 'Access denied' });
+
+            // 2. Generate new ID
+            const { v4: uuidv4 } = require('uuid');
+            const newDocumentId = uuidv4();
+
+            // 3. Create file copy if NOT a folder
+            let newStoragePath = sourceDoc.storagePath;
+            if (!sourceDoc.isFolder) {
+                const fs = require('fs');
+                const path = require('path');
+
+                // Get the physical path
+                const userStorageDir = getUserStorageDir(userId);
+
+                // We don't have the original extension reliably except by trying to extract it from the path or filename
+                const originalFileExt = path.extname(sourceDoc.fileName);
+                const sourcePhysicalPath = path.join(userStorageDir, `${sourceDocId}${originalFileExt}`);
+                const targetPhysicalPath = path.join(userStorageDir, `${newDocumentId}${originalFileExt}`);
+
+                // Check if physical file exists (might exist without extension for some reason, try both)
+                let actualSourcePath = sourcePhysicalPath;
+                if (!fs.existsSync(actualSourcePath)) {
+                    // Try without ext
+                    actualSourcePath = path.join(userStorageDir, sourceDocId);
+                }
+
+                if (fs.existsSync(actualSourcePath)) {
+                    // It exists, let's copy it
+                    fs.copyFileSync(actualSourcePath, targetPhysicalPath);
+                    newStoragePath = `storage/users/${userId}/documents/${newDocumentId}${originalFileExt}`;
+                } else {
+                    console.warn(`WARNING: Source file ${actualSourcePath} not found physically. Cannot copy physical file.`);
+                    // Fallback to storing original path (not ideal but won't crash)
+                }
+            }
+
+            // 4. Save new document in Firestore
+            let newFileName = sourceDoc.fileName;
+            if (newFileName.includes('.')) {
+                // If contains extension "report.pdf", make it "report (Copy).pdf"
+                const parts = newFileName.split('.');
+                const ext = parts.pop();
+                newFileName = `${parts.join('.')} (Copy).${ext}`;
+            } else {
+                newFileName = `${newFileName} (Copy)`;
+            }
+
+            const targetFolderId = req.body.targetFolderId !== undefined ? req.body.targetFolderId : sourceDoc.parentFolderId;
+
+            const newDocData = {
+                ...sourceDoc,
+                documentId: newDocumentId,
+                fileName: newFileName,
+                storagePath: newStoragePath,
+                uploadedAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+                vectorCount: 0, // Assuming we don't copy embeddings immediately
+                isStarred: false,
+                isTrashed: false,
+                parentFolderId: targetFolderId
+            };
+
+            // Remove 'id' if there is one (Firestore id)
+            delete newDocData.id;
+
+            await saveDocument(newDocData);
+
+            // Track copy for dashboard stats
+            if (sourceDoc.isFolder) {
+                trackFolderCreation().catch(e => console.error('Copy folder track failed:', e.message));
+            } else {
+                trackFolderCreation().catch(e => console.error('Copy file track failed:', e.message));
+                // Note: Copying doesn't upload a NEW file to S3 usually in this logic, 
+                // but counts as a new metadata entry.
+            }
+
+            res.json({
+                success: true,
+                message: 'Document copied successfully',
+                document: newDocData
+            });
+
+        } catch (error) {
+            console.error(`❌ Copy failed: ${error.message}`);
+            res.status(500).json({ success: false, message: 'Failed to copy document: ' + error.message });
         }
     }
 );

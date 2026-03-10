@@ -1,10 +1,8 @@
 /**
  * Dashboard Component - CloudAI Smart Storage
  * =============================================
- * Main dashboard showing My Files with empty state and quick actions.
- * Premium light theme matching CloudAI design.
- * 
- * @author CloudAI Team
+ * Main dashboard showing account overview, storage usage, and quick stats.
+ * Matches requested premium dashboard UI.
  */
 
 import { Component, OnInit, signal, effect } from '@angular/core';
@@ -12,164 +10,177 @@ import { CommonModule } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { AuthService } from '../core/services/auth.service';
 import { DocumentService } from '../core/services/document.service';
-import { environment } from '../../environments/environment';
+import { DashboardService } from '../core/services/dashboard.service';
 
 @Component({
   selector: 'app-dashboard',
   standalone: true,
   imports: [CommonModule, RouterLink],
   template: `
-    <div class="animate-in">
-      <!-- Page Header -->
-      <div class="page-header">
-        <h1 class="page-title">My Files</h1>
-        <div class="flex items-center gap-3">
-          <!-- View Toggle -->
-          <div class="view-toggle">
-            <button 
-              (click)="viewMode.set('grid')"
-              class="view-toggle-btn"
-              [class.active]="viewMode() === 'grid'">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                      d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
-              </svg>
-            </button>
-            <button 
-              (click)="viewMode.set('list')"
-              class="view-toggle-btn"
-              [class.active]="viewMode() === 'list'">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
-              </svg>
-            </button>
-            <button class="view-toggle-btn">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                      d="M3 4h13M3 8h9m-9 4h9m5-4v12m0 0l-4-4m4 4l4-4"/>
-              </svg>
-            </button>
-            <button class="view-toggle-btn">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                      d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-              </svg>
-            </button>
+    <div class="animate-in bg-[#f4f7f6] min-h-[calc(100vh-64px)] pb-12">
+      <!-- Welcome Banner -->
+      <div class="px-8 mt-6">
+        <div class="bg-gradient-to-r from-[#6366f1] to-[#8b5cf6] rounded-[20px] p-8 text-white flex justify-between items-center shadow-md border border-white/10">
+          <div>
+            <h1 class="text-3xl font-bold mb-2 tracking-tight">Welcome back, {{ getFirstName() }}! 👋</h1>
+            <p class="text-indigo-100/90 text-[15px]">Your cloud is looking healthy. You've used {{ storagePercent() }}% of your storage.</p>
           </div>
+          <button class="bg-white/10 hover:bg-white/20 backdrop-blur-md px-6 py-2.5 rounded-xl text-white font-medium transition-all text-sm border border-white/25 shadow-sm">
+            Upgrade Plan
+          </button>
+        </div>
+      </div>
+
+      <!-- Stats Cards -->
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-6 px-8 mt-6">
+        <!-- My Files -->
+        <div class="bg-white rounded-[20px] p-6 shadow-sm border border-gray-100/80 flex items-center gap-5 hover:shadow-md transition-shadow">
+          <div class="bg-indigo-50 w-14 h-14 rounded-2xl flex items-center justify-center">
+            <span class="text-2xl opacity-90">📄</span>
+          </div>
+          <div>
+            <p class="text-[13px] text-gray-500 font-medium mb-0.5">My Files</p>
+            <p class="text-2xl font-bold text-gray-900">{{ documentCount() | number }}</p>
+          </div>
+        </div>
+        
+        <!-- Starred -->
+        <div class="bg-white rounded-[20px] p-6 shadow-sm border border-gray-100/80 flex items-center gap-5 hover:shadow-md transition-shadow">
+          <div class="bg-amber-50 w-14 h-14 rounded-2xl flex items-center justify-center">
+            <span class="text-2xl opacity-90">🌟</span>
+          </div>
+          <div>
+            <p class="text-[13px] text-gray-500 font-medium mb-0.5">Starred</p>
+            <p class="text-2xl font-bold text-gray-900">{{ starredCount() | number }}</p>
+          </div>
+        </div>
+
+        <!-- Shared -->
+        <div class="bg-white rounded-[20px] p-6 shadow-sm border border-gray-100/80 flex items-center gap-5 hover:shadow-md transition-shadow">
+          <div class="bg-orange-50 w-14 h-14 rounded-2xl flex items-center justify-center">
+            <span class="text-2xl opacity-90">🤝</span>
+          </div>
+          <div>
+            <p class="text-[13px] text-gray-500 font-medium mb-0.5">Shared</p>
+            <p class="text-2xl font-bold text-gray-900">{{ sharedCount() | number }}</p>
+          </div>
+        </div>
+
+        <!-- AI Tasks -->
+        <div class="bg-white rounded-[20px] p-6 shadow-sm border border-gray-100/80 flex items-center gap-5 hover:shadow-md transition-shadow">
+          <div class="bg-pink-50 w-14 h-14 rounded-2xl flex items-center justify-center">
+            <span class="text-2xl opacity-90">🤖</span>
+          </div>
+          <div>
+            <p class="text-[13px] text-gray-500 font-medium mb-0.5">AI Tasks</p>
+            <p class="text-2xl font-bold text-gray-900">{{ aiTasksCount() | number }}</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Detailed Analytics Row -->
+      <div class="grid grid-cols-1 lg:grid-cols-[1fr_1fr] gap-6 px-8 mt-6">
+        
+        <!-- Storage Usage Details -->
+        <div class="bg-white rounded-[20px] p-7 shadow-sm border border-gray-100/80 h-full flex flex-col">
+          <h3 class="font-semibold text-gray-900 mb-8 text-[17px]">Storage Usage</h3>
           
-          <!-- Upload Button -->
-          <button routerLink="/documents" class="btn-primary">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                    d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
-            </svg>
-            Upload
-          </button>
-        </div>
-      </div>
-
-      <!-- Loading state -->
-      <div *ngIf="isLoading()" class="card p-16">
-        <div class="empty-state">
-          <div class="spinner w-8 h-8 mb-4"></div>
-          <p style="color: var(--text-muted);">Loading your files...</p>
-        </div>
-      </div>
-
-      <!-- Empty state -->
-      <div *ngIf="!isLoading() && documentCount() === 0" class="card p-16">
-        <div class="empty-state">
-          <div class="empty-state-icon">
-            <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" 
-                    d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
-            </svg>
-          </div>
-          <h3 class="empty-state-title">No files yet</h3>
-          <p class="empty-state-description">
-            Upload your <a routerLink="/documents" class="link">first file</a> to get started with Smart Cloud Storage
-          </p>
-          <button routerLink="/documents" class="btn-primary">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                    d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
-            </svg>
-            Upload Files
-          </button>
-        </div>
-      </div>
-
-      <!-- Files Grid -->
-      <div *ngIf="!isLoading() && documentCount() > 0">
-        <!-- Grid View -->
-        <div *ngIf="viewMode() === 'grid'" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-          <div *ngFor="let doc of recentDocuments()" class="document-grid-card">
-            <!-- File Type Badge -->
-            <span [class]="getTypeBadgeClass(doc.fileType)" class="absolute top-3 left-3 z-10">
-              {{ getFileExtension(doc.fileType) }}
-            </span>
-
-            <!-- Preview Area - Thumbnail or Icon -->
-            <div class="document-preview">
-              <!-- Show thumbnail if available -->
-              <img 
-                *ngIf="doc.thumbnailUrl" 
-                [src]="getThumbnailUrl(doc)" 
-                [alt]="doc.fileName"
-                class="document-thumbnail"
-                (error)="onThumbnailError($event, doc)"/>
-              
-              <!-- Fallback to icon if no thumbnail -->
-              <svg *ngIf="!doc.thumbnailUrl" [class]="'document-preview-icon ' + getFileClass(doc.fileType)" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                      d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-              </svg>
+          <div class="flex items-center justify-between flex-1 px-4 lg:px-8">
+            <!-- Donut Chart -->
+            <div class="relative w-56 h-56 shrink-0">
+               <!-- SVG Donut Chart -->
+               <svg viewBox="0 0 36 36" class="w-full h-full transform -rotate-90">
+                  <!-- Background Circle (Free Space) -->
+                  <circle cx="18" cy="18" r="15.915" fill="transparent" stroke="#1f2937" stroke-width="4.5"></circle>
+                  
+                  <!-- Segments (stroke-dasharray="percentage 100") -->
+                  <!-- Documents -->
+                  <circle *ngIf="docsPercent() > 0" cx="18" cy="18" r="15.915" fill="transparent" stroke="#8b5cf6" stroke-width="5" 
+                          [attr.stroke-dasharray]="docsPercent() + ' 100'" 
+                          stroke-dashoffset="0" class="transition-all duration-1000"></circle>
+                          
+                  <!-- Media -->
+                  <circle *ngIf="mediaPercent() > 0" cx="18" cy="18" r="15.915" fill="transparent" stroke="#a855f7" stroke-width="5" 
+                          [attr.stroke-dasharray]="mediaPercent() + ' 100'" 
+                          [attr.stroke-dashoffset]="'-' + docsPercent()" class="transition-all duration-1000"></circle>
+                          
+                  <!-- Others -->
+                  <circle *ngIf="othersPercent() > 0" cx="18" cy="18" r="15.915" fill="transparent" stroke="#10b981" stroke-width="5" 
+                          [attr.stroke-dasharray]="othersPercent() + ' 100'" 
+                          [attr.stroke-dashoffset]="'-' + (docsPercent() + mediaPercent())" class="transition-all duration-1000"></circle>
+               </svg>
+               <!-- Center Label -->
+               <div class="absolute inset-0 flex items-center justify-center flex-col">
+                 <span class="text-3xl font-bold text-gray-900 tracking-tight">{{ storagePercent() }}%</span>
+                 <span class="text-sm text-gray-500 font-medium">Used</span>
+               </div>
             </div>
-
-            <!-- Document Info -->
-            <h3 class="document-name" [title]="doc.fileName">{{ doc.fileName }}</h3>
-            <div class="document-meta">
-              <span>{{ formatFileSize(doc.fileSize) }}</span>
-              <span [class]="getStatusClass(doc.status)">
-                <span *ngIf="doc.status === 'ready'" class="flex items-center gap-1">
-                  <span class="w-1.5 h-1.5 rounded-full" style="background: var(--success);"></span>
-                  Ready
-                </span>
-                <span *ngIf="doc.status === 'processing'" class="flex items-center gap-1">
-                  <span class="spinner w-3 h-3"></span>
-                  Processing
-                </span>
-              </span>
+            
+            <!-- Legend List -->
+            <div class="flex flex-col gap-4 ml-8">
+              <div class="flex items-center gap-3">
+                 <span class="w-4 h-4 rounded-[4px] bg-[#8b5cf6]"></span>
+                 <span class="text-[14px] text-gray-500 font-medium w-24">Documents</span>
+                 <span class="text-[14px] font-bold text-gray-900">{{ formatFileSize(docsStorage()) }}</span>
+              </div>
+              <div class="flex items-center gap-3">
+                 <span class="w-4 h-4 rounded-[4px] bg-[#a855f7]"></span>
+                 <span class="text-[14px] text-gray-500 font-medium w-24">Media</span>
+                 <span class="text-[14px] font-bold text-gray-900">{{ formatFileSize(mediaStorage()) }}</span>
+              </div>
+              <div class="flex items-center gap-3">
+                 <span class="w-4 h-4 rounded-[4px] bg-[#10b981]"></span>
+                 <span class="text-[14px] text-gray-500 font-medium w-24">Others</span>
+                 <span class="text-[14px] font-bold text-gray-900">{{ formatFileSize(othersStorage()) }}</span>
+              </div>
+              <div class="flex items-center gap-3 mt-3 pt-4 border-t border-gray-100">
+                 <span class="w-4 h-4 rounded-[4px] bg-gray-800"></span>
+                 <span class="text-[14px] text-gray-500 font-medium w-24">Free</span>
+                 <span class="text-[14px] font-bold text-gray-900">{{ formatFileSize(freeStorage()) }}</span>
+              </div>
             </div>
           </div>
         </div>
 
-        <!-- List View -->
-        <div *ngIf="viewMode() === 'list'" class="card divide-y" style="--tw-divide-opacity: 0.1;">
-          <div *ngFor="let doc of recentDocuments()" 
-               class="flex items-center gap-4 p-4 transition-colors hover:bg-gray-50">
-            <!-- File Icon -->
-            <div class="recent-doc-icon" [ngClass]="getIconBgClass(doc.fileType)">
-              <svg class="w-5 h-5" [ngClass]="getIconColorClass(doc.fileType)" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                      d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-              </svg>
-            </div>
+        <!-- Recent Activity List -->
+        <div class="bg-white rounded-[20px] p-7 shadow-sm border border-gray-100/80 h-full flex flex-col">
+          <h3 class="font-semibold text-gray-900 mb-5 text-[17px]">Recent Activity</h3>
+          
+          <div class="flex-1 flex flex-col gap-3">
+             <div *ngFor="let doc of recentDocuments()" 
+                  class="flex items-center gap-4 p-3 rounded-xl hover:bg-gray-50/80 transition-colors border border-transparent hover:border-gray-100 cursor-pointer"
+                  routerLink="/documents">
+                
+                <!-- File Icon with Custom Background -->
+                <div class="w-11 h-11 flex items-center justify-center rounded-[10px] bg-gray-50/80 border border-gray-100/50 shadow-sm shrink-0" 
+                     [ngClass]="getIconBgClass(doc.fileType)">
+                   <span class="text-xl">{{ getFileEmoji(doc.fileType) }}</span>
+                </div>
+                
+                <!-- Info -->
+                <div class="flex-1 min-w-0 pr-4">
+                   <h4 class="text-[14px] font-bold text-gray-800 truncate mb-0.5" [title]="doc.fileName">{{ doc.fileName }}</h4>
+                   <p class="text-[12px] text-gray-500 font-medium">{{ formatDate(doc.uploadedAt) }}</p>
+                </div>
+                
+                <!-- Size -->
+                <div class="text-[14px] font-bold text-gray-600 shrink-0">
+                  {{ formatFileSize(doc.fileSize) }}
+                </div>
+             </div>
+             
+             <!-- Empty State -->
+             <div *ngIf="recentDocuments().length === 0 && !isLoading()" class="m-auto text-center text-gray-400">
+                <p>No recent files</p>
+             </div>
 
-            <!-- File Info -->
-            <div class="flex-1 min-w-0">
-              <h3 class="font-medium truncate" style="color: var(--text-primary);">{{ doc.fileName }}</h3>
-              <p class="text-sm" style="color: var(--text-muted);">
-                {{ formatFileSize(doc.fileSize) }} • {{ formatDate(doc.uploadedAt) }}
-              </p>
-            </div>
-
-            <!-- Status -->
-            <span [class]="getStatusBadgeClass(doc.status)">
-              {{ doc.status }}
-            </span>
+             <!-- Loading -->
+             <div *ngIf="isLoading()" class="m-auto flex justify-center py-8">
+               <div class="spinner w-8 h-8"></div>
+             </div>
           </div>
         </div>
+        
       </div>
     </div>
   `
@@ -177,27 +188,36 @@ import { environment } from '../../environments/environment';
 export class DashboardComponent implements OnInit {
   isLoading = signal(true);
   documentCount = signal(0);
+  starredCount = signal(0);
+  sharedCount = signal(0);
+  aiTasksCount = signal(0);
+
+  // Storage data
+  docsStorage = signal(0);
+  mediaStorage = signal(0);
+  othersStorage = signal(0);
+  freeStorage = signal(0);
   totalStorage = signal('0 KB');
+
+  // Chart percentages (0 to 100)
+  docsPercent = signal(0);
+  mediaPercent = signal(0);
+  othersPercent = signal(0);
   storagePercent = signal(0);
+
   recentDocuments = signal<any[]>([]);
-  weeklyChange = signal(0);
-  viewMode = signal<'grid' | 'list'>('grid');
 
   constructor(
     public authService: AuthService,
-    private documentService: DocumentService
+    private documentService: DocumentService,
+    private dashboardService: DashboardService
   ) {
-    // CRITICAL FIX: Auto-sync dashboard when documentService.documents changes
+    // Reactive sync: When the shared service updates its signal, update this component's local signals.
     effect(() => {
-      const docs = this.documentService.documents();
-      console.log('[Dashboard] Documents signal changed, count:', docs.length);
-      // Update dashboard stats
-      this.documentCount.set(docs.length);
-      this.recentDocuments.set(docs.slice(0, 20));
-
-      // Calculate total storage
-      const totalBytes = docs.reduce((sum, doc) => sum + (doc.fileSize || 0), 0);
-      this.totalStorage.set(this.formatFileSize(totalBytes));
+      const data = this.dashboardService.dashboardData();
+      if (data && data.success) {
+        this.updateLocalSignals(data);
+      }
     });
   }
 
@@ -205,27 +225,49 @@ export class DashboardComponent implements OnInit {
     this.loadDashboardData();
   }
 
+  /**
+   * Helper to sync backend data with component signals
+   */
+  private updateLocalSignals(data: any): void {
+    const { stats, recentDocuments, typeDistribution } = data;
+
+    // Card Stats
+    this.documentCount.set(stats.totalFiles || 0);
+    this.starredCount.set(stats.starredCount || 0);
+    this.sharedCount.set(stats.sharedCount || 0);
+    this.aiTasksCount.set(stats.aiTasksCount || 0);
+
+    // Recent files
+    this.recentDocuments.set(recentDocuments || []);
+
+    // Storage Details
+    this.docsStorage.set(typeDistribution?.documents?.bytes || 0);
+    this.mediaStorage.set(typeDistribution?.media?.bytes || 0);
+    this.othersStorage.set(typeDistribution?.others?.bytes || 0);
+
+    const totalUsed = stats.totalStorageUsed || 0;
+    const limit = stats.storageLimit || (5 * 1024 * 1024 * 1024);
+    this.totalStorage.set(this.formatFileSize(totalUsed));
+    this.freeStorage.set(Math.max(0, limit - totalUsed));
+    this.storagePercent.set(stats.percentUsed || 0);
+
+    if (limit > 0) {
+      this.docsPercent.set((this.docsStorage() / limit) * 100);
+      this.mediaPercent.set((this.mediaStorage() / limit) * 100);
+      this.othersPercent.set((this.othersStorage() / limit) * 100);
+    }
+  }
+
   async loadDashboardData(): Promise<void> {
     try {
-      await this.documentService.loadDocuments();
-      const docs = this.documentService.documents();
+      this.isLoading.set(true);
 
-      this.documentCount.set(docs.length);
-      this.recentDocuments.set(docs.slice(0, 20));
-
-      // Calculate total storage
-      const totalBytes = docs.reduce((sum, doc) => sum + (doc.fileSize || 0), 0);
-      this.totalStorage.set(this.formatFileSize(totalBytes));
-
-      // Calculate storage percentage (5 GB = 5368709120 bytes)
-      const totalGB = 5 * 1024 * 1024 * 1024;
-      this.storagePercent.set(Math.round((totalBytes / totalGB) * 100));
-
-      // Calculate weekly change (documents added in last 7 days)
-      const oneWeekAgo = new Date();
-      oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-      const recentDocs = docs.filter(doc => new Date(doc.uploadedAt) > oneWeekAgo);
-      this.weeklyChange.set(recentDocs.length);
+      if (this.authService.isAuthenticated()) {
+        const response = await this.dashboardService.getDashboardAsync();
+        if (response && response.success) {
+          this.updateLocalSignals(response);
+        }
+      }
     } catch (error) {
       console.error('Failed to load dashboard data:', error);
     } finally {
@@ -233,78 +275,38 @@ export class DashboardComponent implements OnInit {
     }
   }
 
-  getTypeBadgeClass(fileType: string): string {
-    const type = fileType?.toLowerCase() || '';
-    if (type.includes('pdf')) return 'badge-pdf';
-    if (type.includes('doc') || type.includes('word')) return 'badge-docx';
-    if (type.includes('xls') || type.includes('spreadsheet')) return 'badge-xlsx';
-    if (type.includes('ppt') || type.includes('presentation')) return 'badge-pptx';
-    return 'badge-txt';
+  getFirstName(): string {
+    const fullName = this.authService.currentUser()?.displayName;
+    if (fullName && fullName.includes(' ')) {
+      return fullName.split(' ')[0];
+    }
+    return fullName || 'User';
   }
 
-  getFileExtension(fileType: string): string {
+  getFileEmoji(fileType: string): string {
     const type = fileType?.toLowerCase() || '';
-    if (type.includes('pdf')) return 'PDF';
-    if (type.includes('doc') || type.includes('word')) return 'DOCX';
-    if (type.includes('xls') || type.includes('spreadsheet')) return 'XLSX';
-    if (type.includes('ppt') || type.includes('presentation')) return 'PPTX';
-    return 'TXT';
-  }
-
-  getFileClass(fileType: string): string {
-    const type = fileType?.toLowerCase() || '';
-    if (type.includes('pdf')) return 'pdf';
-    if (type.includes('doc') || type.includes('word')) return 'docx';
-    if (type.includes('xls') || type.includes('spreadsheet')) return 'xlsx';
-    if (type.includes('ppt') || type.includes('presentation')) return 'pptx';
-    return 'txt';
+    if (type.includes('pdf')) return '📄';
+    if (type.includes('doc') || type.includes('word')) return '📝';
+    if (type.includes('xls') || type.includes('spreadsheet')) return '📊';
+    if (type.includes('ppt') || type.includes('presentation')) return '🖥️';
+    if (type.includes('image') || type.includes('png') || type.includes('jpg') || type.includes('jpeg')) return '🖼️';
+    if (type.includes('audio') || type.includes('mp3') || type.includes('wav')) return '🎵';
+    if (type.includes('video') || type.includes('mp4')) return '🎬';
+    return '📁';
   }
 
   getIconBgClass(fileType: string): string {
     const type = fileType?.toLowerCase() || '';
-    if (type.includes('pdf')) return 'bg-red-50';
-    if (type.includes('doc') || type.includes('word')) return 'bg-blue-50';
-    if (type.includes('xls') || type.includes('spreadsheet')) return 'bg-emerald-50';
-    if (type.includes('ppt') || type.includes('presentation')) return 'bg-orange-50';
-    return 'bg-gray-50';
-  }
-
-  getIconColorClass(fileType: string): string {
-    const type = fileType?.toLowerCase() || '';
-    if (type.includes('pdf')) return 'text-red-500';
-    if (type.includes('doc') || type.includes('word')) return 'text-blue-500';
-    if (type.includes('xls') || type.includes('spreadsheet')) return 'text-emerald-500';
-    if (type.includes('ppt') || type.includes('presentation')) return 'text-orange-500';
-    return 'text-gray-500';
-  }
-
-  getStatusClass(status: string): string {
-    switch (status) {
-      case 'ready':
-        return 'text-emerald-600';
-      case 'processing':
-        return 'text-amber-600';
-      case 'failed':
-        return 'text-red-600';
-      default:
-        return 'text-gray-600';
-    }
-  }
-
-  getStatusBadgeClass(status: string): string {
-    switch (status) {
-      case 'ready':
-        return 'badge-success';
-      case 'processing':
-        return 'badge-warning';
-      case 'failed':
-        return 'badge-danger';
-      default:
-        return 'badge-primary';
-    }
+    if (type.includes('pdf')) return 'bg-red-50 text-red-500';
+    if (type.includes('doc') || type.includes('word')) return 'bg-blue-50 text-blue-500';
+    if (type.includes('xls') || type.includes('spreadsheet')) return 'bg-emerald-50 text-emerald-500';
+    if (type.includes('ppt') || type.includes('presentation')) return 'bg-orange-50 text-orange-500';
+    if (type.includes('image') || type.includes('audio') || type.includes('video')) return 'bg-purple-50 text-purple-500';
+    return 'bg-gray-50 text-gray-500';
   }
 
   formatFileSize(bytes: number): string {
+    if (bytes === 0) return '0 KB';
     return this.documentService.formatFileSize(bytes);
   }
 
@@ -315,31 +317,9 @@ export class DashboardComponent implements OnInit {
     const hours = Math.floor(diff / (1000 * 60 * 60));
 
     if (hours < 1) return 'Just now';
-    if (hours < 24) return `${hours}h ago`;
+    if (hours < 24) return `${hours} hours ago`;
     if (hours < 48) return 'Yesterday';
 
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  }
-
-  // Thumbnail helpers for Google Drive-style previews
-  getThumbnailUrl(doc: any): string {
-    // Priority: previewUrl (S3) > thumbnailUrl (legacy local)
-    const url = doc.previewUrl || doc.thumbnailUrl;
-
-    if (url) {
-      // If it's a relative URL, prepend the API base
-      if (url.startsWith('/')) {
-        return `${environment.apiUrl}${url}`;
-      }
-      return url;
-    }
-    return '';
-  }
-
-  onThumbnailError(event: any, doc: any) {
-    // On error, hide the broken image and show the icon fallback
-    event.target.style.display = 'none';
-    doc.previewUrl = null;
-    doc.thumbnailUrl = null;  // This will trigger the fallback icon
   }
 }

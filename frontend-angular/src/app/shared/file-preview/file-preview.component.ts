@@ -166,8 +166,34 @@ import { SpreadsheetViewerComponent } from '../spreadsheet-viewer/spreadsheet-vi
                         </div>
                     </ng-container>
 
+                    <!-- PPTX Preview -->
+                    <ng-container *ngIf="!isLoading && !loadError && isPpt()">
+                        <iframe 
+                            *ngIf="officePreviewUrl" 
+                            [src]="officePreviewUrl" 
+                            class="pdf-preview"
+                            frameborder="0"
+                            (load)="onIframeLoad()">
+                        </iframe>
+                        <div *ngIf="!officePreviewUrl && pptLoading" class="loading-state">
+                            <div class="spinner-large"></div>
+                            <p>Loading presentation preview...</p>
+                        </div>
+                    </ng-container>
+
+                    <!-- Audio Preview -->
+                    <ng-container *ngIf="!isLoading && !loadError && isAudio()">
+                        <div class="audio-preview text-center p-12">
+                            <div class="mb-6">
+                                <span class="text-6xl">🎵</span>
+                            </div>
+                            <h3 class="text-xl font-semibold mb-6 text-gray-800 dark:text-gray-100">{{ file?.fileName }}</h3>
+                            <audio *ngIf="audioUrl" controls [src]="audioUrl" class="w-full max-w-md mx-auto"></audio>
+                        </div>
+                    </ng-container>
+
                     <!-- Unsupported Format -->
-                    <ng-container *ngIf="!isLoading && !loadError && !isPDF() && !isImage() && !isText() && !isDocx() && !isExcel()">
+                    <ng-container *ngIf="!isLoading && !loadError && !isPDF() && !isImage() && !isText() && !isDocx() && !isExcel() && !isPpt() && !isAudio()">
                         <div class="unsupported-preview">
                             <div class="unsupported-icon">
                                 <span class="text-6xl">{{ getFileIcon() }}</span>
@@ -616,6 +642,8 @@ export class FilePreviewComponent implements OnInit, OnChanges {
     textContent: string = '';
     docxPreviewUrl: SafeResourceUrl | null = null;
     excelPreviewUrl: string = '';
+    officePreviewUrl: SafeResourceUrl | null = null;
+    audioUrl: SafeResourceUrl | null = null;
 
     // State
     isLoading: boolean = true;
@@ -625,6 +653,7 @@ export class FilePreviewComponent implements OnInit, OnChanges {
     docxError: string = '';
     excelLoading: boolean = false;
     excelError: string = '';
+    pptLoading: boolean = false;
 
     private apiUrl = environment.apiUrl;
 
@@ -664,6 +693,9 @@ export class FilePreviewComponent implements OnInit, OnChanges {
         this.docxPreviewUrl = null;
         this.docxLoading = false;
         this.docxError = '';
+        this.officePreviewUrl = null;
+        this.pptLoading = false;
+        this.audioUrl = null;
 
         console.log('[FilePreview] Loading preview for:', this.file.fileName, 'Type:', this.file.fileType);
 
@@ -682,6 +714,10 @@ export class FilePreviewComponent implements OnInit, OnChanges {
             // XLSX/XLS - Load thumbnail preview
             this.isLoading = false;
             this.loadExcelPreviewWithAuth();
+        } else if (this.isPpt()) {
+            this.loadPptPreviewWithAuth();
+        } else if (this.isAudio()) {
+            this.loadAudioPreviewWithAuth();
         } else {
             this.isLoading = false;
         }
@@ -942,6 +978,73 @@ export class FilePreviewComponent implements OnInit, OnChanges {
         this.excelLoading = false;
     }
 
+    private async loadPptPreviewWithAuth() {
+        this.pptLoading = true;
+        try {
+            const docId = (this.file as any)?.documentId;
+            if (!docId) throw new Error('Document ID not found');
+
+            const token = await this.getAuthToken();
+            const metaResponse = await fetch(`${this.apiUrl}/secure/documents/${docId}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (metaResponse.ok) {
+                const metaData = await metaResponse.json();
+                if (metaData.success && metaData.document?.signedUrl) {
+                    const signedUrl = metaData.document.signedUrl;
+
+                    // Use Google Docs Viewer for PPTX
+                    const viewerUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(signedUrl)}&embedded=true`;
+                    this.officePreviewUrl = this.sanitizer.bypassSecurityTrustResourceUrl(viewerUrl);
+                    this.isLoading = false;
+                    return;
+                }
+            }
+            throw new Error('Could not generate secure view link for PowerPoint');
+        } catch (error: any) {
+            console.error('PPT load error:', error);
+            this.loadError = error.message;
+            this.pptLoading = false;
+            this.isLoading = false;
+        }
+    }
+
+    private async loadAudioPreviewWithAuth() {
+        try {
+            const docId = (this.file as any)?.documentId;
+            if (!docId) throw new Error('Document ID not found');
+
+            const token = await this.getAuthToken();
+            const metaResponse = await fetch(`${this.apiUrl}/secure/documents/${docId}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (metaResponse.ok) {
+                const metaData = await metaResponse.json();
+                if (metaData.success && metaData.document?.signedUrl) {
+                    this.audioUrl = this.sanitizer.bypassSecurityTrustResourceUrl(metaData.document.signedUrl);
+                    this.isLoading = false;
+                    return;
+                }
+            }
+
+            // Fallback to proxy
+            const response = await fetch(`${this.apiUrl}/secure/documents/${docId}/view`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (!response.ok) throw new Error('Proxy fetch failed');
+
+            const blob = await response.blob();
+            this.audioUrl = this.sanitizer.bypassSecurityTrustResourceUrl(URL.createObjectURL(blob));
+            this.isLoading = false;
+        } catch (error: any) {
+            console.error('Audio load error:', error);
+            this.loadError = 'Failed to load audio';
+            this.isLoading = false;
+        }
+    }
+
     private async getAuthToken(): Promise<string> {
         // Use AuthService to get the token
         try {
@@ -1050,6 +1153,18 @@ export class FilePreviewComponent implements OnInit, OnChanges {
             type === 'application/vnd.ms-excel';
     }
 
+    isPpt(): boolean {
+        const types = ['pptx', 'ppt', 'pps'];
+        const type = this.file?.fileType?.toLowerCase() || '';
+        return types.includes(type) || type.includes('powerpoint') || type.includes('presentation');
+    }
+
+    isAudio(): boolean {
+        const types = ['mp3', 'wav', 'ogg', 'm4a'];
+        const type = this.file?.fileType?.toLowerCase() || '';
+        return types.includes(type) || type.startsWith('audio/');
+    }
+
     getSpreadsheetFile(): any {
         if (!this.file) return null;
         return {
@@ -1066,6 +1181,8 @@ export class FilePreviewComponent implements OnInit, OnChanges {
         if (this.isPDF()) return '📄';
         if (this.isDocx()) return '📝';
         if (this.isExcel()) return '📊';
+        if (this.isPpt()) return '📽️';
+        if (this.isAudio()) return '🎵';
         if (type === 'txt') return '📃';
         if (this.isImage()) return '🖼️';
         return '📁';

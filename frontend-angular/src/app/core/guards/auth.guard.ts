@@ -33,6 +33,17 @@ export const authGuard: CanActivateFn = (route, state) => {
     }
 
     if (authService.isAuthenticated()) {
+        const user = authService.currentUser();
+        const role = user?.role?.toLowerCase();
+
+        // Prevent admin from accessing normal user dashboard
+        if (role === 'admin' || user?.email === 'admin@cloudspace.com') {
+            if (state.url === '/dashboard' || state.url.startsWith('/dashboard?')) {
+                router.navigate(['/admin/dashboard']);
+                return false;
+            }
+        }
+
         return true;
     }
 

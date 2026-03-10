@@ -9,7 +9,8 @@
  * @author College Project
  */
 
-const { getAuth } = require('../config/firebase.config');
+const { getAuth, getFirestore } = require('../config/firebase.config');
+
 
 
 /**
@@ -135,7 +136,36 @@ async function optionalAuth(req, res, next) {
     }
 }
 
+/**
+ * Admin role check middleware
+ */
+async function isAdmin(req, res, next) {
+    try {
+        if (!req.user || !req.user.email) {
+            return res.status(401).json({ success: false, message: 'Unauthorized' });
+        }
+
+        // Allow immediate access if email matches ADMIN_EMAIL from env or the hardcoded admin email
+        if ((process.env.ADMIN_EMAIL && req.user.email === process.env.ADMIN_EMAIL) || req.user.email === 'admin@cloudspace.com') {
+            return next();
+        }
+
+        // Check Firestore user role
+        const firestore = getFirestore();
+        const userDoc = await firestore.collection('users').doc(req.user.uid).get();
+
+        if (userDoc.exists && userDoc.data().role?.toLowerCase() === 'admin') {
+            return next();
+        }
+
+        return res.status(403).json({ success: false, message: 'Forbidden: Admin access required' });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: 'Admin verification failed', error: error.message });
+    }
+}
+
 module.exports = {
     verifyFirebaseToken,
-    optionalAuth
+    optionalAuth,
+    isAdmin
 };

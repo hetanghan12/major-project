@@ -59,7 +59,7 @@ export class ChatService {
             content: `👋 Hello! I'm your AI assistant. I can answer questions based on the documents you've uploaded.
 
 **How to use:**
-1. Upload your documents (PDF, DOCX, or TXT) in the Documents section
+1. Upload your documents (PDF, DOCX, TXT, PPT, Image, Audio) in the Documents section
 2. Ask me any question about your documents
 3. I'll search through your files and provide relevant answers
 

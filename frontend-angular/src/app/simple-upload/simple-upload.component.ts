@@ -24,7 +24,7 @@ import { UploadService, UploadResponse } from '../core/services/upload.service';
                     type="file" 
                     #fileInput
                     (change)="onFileSelected($event)"
-                    accept=".jpg,.jpeg,.png,.pdf,.doc,.docx,.xlsx,.xls,.pptx,.ppt,.txt"
+                    accept=".jpg,.jpeg,.png,.pdf,.doc,.docx,.xlsx,.xls,.pptx,.ppt,.txt,.mp3,.wav"
                     class="block w-full text-sm text-gray-500
                         file:mr-4 file:py-2.5 file:px-4
                         file:rounded-lg file:border-0

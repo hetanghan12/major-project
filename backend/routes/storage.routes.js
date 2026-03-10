@@ -79,6 +79,24 @@ router.get('/storage/stats',
             });
 
         } catch (error) {
+            if (error.code === 8 || error.message.includes('Quota')) {
+                return res.json({
+                    success: true,
+                    storage: {
+                        storageUsedBytes: 0,
+                        storageLimitBytes: 5368709120,
+                        storageUsedFormatted: "0 B",
+                        storageLimitFormatted: "5 GB",
+                        percentUsed: 0,
+                        fileCount: 0,
+                        isNearLimit: false,
+                        isAtLimit: false,
+                        availableBytes: 5368709120,
+                        availableFormatted: "5 GB"
+                    },
+                    quotaExceeded: true
+                });
+            }
             console.error('Failed to get storage stats:', error.message);
             res.status(500).json({
                 success: false,
@@ -106,6 +124,19 @@ router.get('/storage/breakdown',
             });
 
         } catch (error) {
+            if (error.code === 8 || error.message.includes('Quota')) {
+                return res.json({
+                    success: true,
+                    breakdown: {
+                        documents: { count: 0, bytes: 0 },
+                        image: { count: 0, bytes: 0 },
+                        video: { count: 0, bytes: 0 },
+                        audio: { count: 0, bytes: 0 },
+                        other: { count: 0, bytes: 0 }
+                    },
+                    quotaExceeded: true
+                });
+            }
             console.error('Failed to get storage breakdown:', error.message);
             res.status(500).json({
                 success: false,

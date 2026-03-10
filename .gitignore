@@ -1,0 +1,9 @@
+node_modules/
+.angular/
+dist/
+*.log
+git_status.txt
+git_out.txt
+install_charts.js
+test_install.js
+.git/index.lock

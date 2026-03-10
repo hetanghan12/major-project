@@ -163,8 +163,8 @@ async function renderThumbnail({
         }
 
         // Upload to S3
-        const s3Key = `thumbnails/${userId}/${documentId}.png`;
-        const s3Result = await uploadToS3(thumbnailBuffer, s3Key, 'image/png');
+        const thumbnailS3Key = `thumbnails/${userId}/${documentId}.png`;
+        const s3Result = await uploadToS3(thumbnailBuffer, thumbnailS3Key, 'image/png');
 
         // Also save locally as backup
         const localPath = path.join(CONFIG.LOCAL_DIR, `${documentId}.png`);
@@ -175,7 +175,7 @@ async function renderThumbnail({
         console.log(`   📁 S3: ${s3Result.s3Key}`);
 
         return {
-            previewUrl: s3Result.publicUrl,
+            previewUrl: s3Result.s3Url,
             previewPath: s3Result.s3Key,
             localPath,
             method: renderMethod,
@@ -189,8 +189,8 @@ async function renderThumbnail({
         const fallbackBuffer = await renderFallbackPlaceholder(normalizedType, fileName);
 
         // Upload fallback to S3
-        const s3Key = `thumbnails/${userId}/${documentId}.png`;
-        const s3Result = await uploadToS3(fallbackBuffer, s3Key, 'image/png');
+        const thumbnailS3Key = `thumbnails/${userId}/${documentId}.png`;
+        const s3Result = await uploadToS3(fallbackBuffer, thumbnailS3Key, 'image/png');
 
         return {
             previewUrl: s3Result.s3Url,
@@ -344,7 +344,7 @@ async function renderPDFWithPuppeteer(pdfBuffer) {
 
         // Wait for PDF to render
         await page.waitForFunction('window.pdfRendered === true', { timeout: 10000 });
-        await page.waitForTimeout(500);
+        await new Promise(r => setTimeout(r, 500));
 
         const screenshot = await page.screenshot({
             type: 'png',

@@ -290,7 +290,7 @@ async function upsertVectors(userId, vectors) {
  * @param {Array} queryVector - Query embedding vector
  * @param {number} topK - Number of results to return
  */
-async function queryVectors(userId, queryVector, topK = 5) {
+async function queryVectors(userId, queryVector, topK = 5, filter = null) {
     // SECURITY: Validate and derive namespace from authenticated userId
     const namespace = deriveSecureNamespace(userId);
 
@@ -298,11 +298,17 @@ async function queryVectors(userId, queryVector, topK = 5) {
     // SECURITY: Use validated namespace derived from authenticated user
     const pineconeNamespace = index.namespace(namespace);
 
-    const results = await pineconeNamespace.query({
+    const queryOptions = {
         vector: queryVector,
         topK,
         includeMetadata: true
-    });
+    };
+
+    if (filter) {
+        queryOptions.filter = filter;
+    }
+
+    const results = await pineconeNamespace.query(queryOptions);
 
     return results.matches || [];
 }
