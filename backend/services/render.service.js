@@ -51,8 +51,12 @@ try {
 } catch { console.log('⚠️ ExcelJS not installed - using placeholder'); }
 
 try {
-    pdfPoppler = require('pdf-poppler');
-    console.log('✅ pdf-poppler available for native PDF rendering');
+    if (process.platform === 'win32') {
+        pdfPoppler = require('pdf-poppler');
+        console.log('✅ pdf-poppler available for native PDF rendering');
+    } else {
+        console.log('ℹ️ pdf-poppler skipped (non-Windows platform)');
+    }
 } catch { console.log('⚠️ pdf-poppler not available, will use fallback'); }
 
 // Windows Poppler path

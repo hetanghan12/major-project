@@ -27,9 +27,13 @@ const { createCanvas, registerFont } = require('canvas');
 // PDF to image conversion
 let pdfPoppler;
 try {
-    pdfPoppler = require('pdf-poppler');
+    if (process.platform === 'win32') {
+        pdfPoppler = require('pdf-poppler');
+    } else {
+        console.log('ℹ️ pdf-poppler skipped (non-Windows platform)');
+    }
 } catch (e) {
-    console.log('pdf-poppler not available, will use fallback');
+    console.log('⚠️ pdf-poppler not available, will use fallback');
 }
 
 // Puppeteer for HTML rendering (optional, for high-quality DOCX)
