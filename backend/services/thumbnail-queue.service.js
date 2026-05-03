@@ -19,7 +19,7 @@
  */
 
 const { renderThumbnail } = require('./render.service');
-const { updateDocumentStatus } = require('./firestore.service');
+const { updateDocumentStatus, updateDocument } = require('./firestore.service');
 
 // =============================================================================
 // CONFIGURATION
@@ -29,7 +29,7 @@ const CONFIG = {
     MAX_WORKERS: 3,
     MAX_RETRIES: 3,
     RETRY_BASE_DELAY: 2000,
-    JOB_TIMEOUT: 60000,
+    JOB_TIMEOUT: 30000, // Reduced from 60s to 30s
     CLEANUP_INTERVAL: 300000,
     MAX_COMPLETED_JOBS: 100
 };
@@ -80,6 +80,11 @@ function queueThumbnailJob({
     fileName,
     s3Key
 }) {
+    if (!documentId) {
+        console.error('❌ Cannot queue thumbnail job: documentId is missing!');
+        return null;
+    }
+
     const jobId = `thumb_${documentId}_${Date.now()}`;
     const normalizedType = normalizeType(fileType, fileName);
 
@@ -163,23 +168,21 @@ function getQueueStats() {
  * Process the job queue
  */
 async function processQueue() {
-    if (isProcessing) return;
-    isProcessing = true;
-
+    // Fill available workers
     while (jobQueue.length > 0 && activeWorkers < CONFIG.MAX_WORKERS) {
         const job = jobQueue.shift();
         if (!job) continue;
 
         activeWorkers++;
-        processingJobs.set(job.id, { ...job, status: 'processing' });
+        processingJobs.set(job.id, { ...job, status: 'processing', startedAt: new Date().toISOString() });
 
-        // Process in background
+        console.log(`🚀 Worker starting job: ${job.id} (Active: ${activeWorkers}/${CONFIG.MAX_WORKERS})`);
+
+        // Process in background - don't await so we can start more workers
         processJob(job).catch(err => {
             console.error(`❌ Worker error for job ${job.id}:`, err.message);
         });
     }
-
-    isProcessing = false;
 }
 
 /**
@@ -258,14 +261,15 @@ async function handleJobSuccess(job, result) {
 
     // Update document in Firestore
     try {
-        await updateDocumentStatus(job.documentId, 'ready', {
+        await updateDocument(job.documentId, {
             previewUrl: result.previewUrl,
             previewPath: result.previewPath,
             previewGenerated: true,
             previewGeneratedAt: new Date().toISOString(),
             previewMethod: result.method,
-            thumbnailUrl: result.previewUrl,
-            thumbnailStatus: 'ready'
+            thumbnailUrl: `/api/thumbnails/${job.documentId}.png`,
+            thumbnailStatus: 'ready',
+            status: 'completed' // Alignment with frontend expected status
         });
         console.log(`   📝 Firestore updated with preview URL`);
     } catch (dbError) {
@@ -312,16 +316,21 @@ async function handleJobFailure(job, error) {
     failedJobs.set(job.id, failedJob);
     totalFailed++;
 
-    // Update document with failure status
+    // Update document with failure status - MANDATORY
     try {
-        await updateDocumentStatus(job.documentId, 'ready', {
+        await updateDocument(job.documentId, {
             previewUrl: null,
+            thumbnailUrl: null, // Clear any broken URL
             previewError: error.message,
             previewFailed: true,
             previewFailedAt: new Date().toISOString(),
-            thumbnailStatus: 'failed'
+            thumbnailStatus: 'failed',
+            status: 'completed' // Ensure it's not stuck in 'processing' badge
         });
-    } catch { }
+        console.log(`   📝 Updated Firestore status to 'failed' for ${job.documentId}`);
+    } catch (dbError) {
+        console.error(`   ⚠️ Failed to update failure status in Firestore: ${dbError.message}`);
+    }
 }
 
 // =============================================================================
@@ -348,7 +357,7 @@ function normalizeType(fileType, fileName) {
 // CLEANUP TIMER
 // =============================================================================
 
-setInterval(() => {
+let cleanupInterval = setInterval(() => {
     const now = Date.now();
 
     // Clean old completed jobs
@@ -373,9 +382,83 @@ setInterval(() => {
 // EXPORTS
 // =============================================================================
 
+/**
+ * RECOVERY: Scan Firestore for stuck thumbnail jobs and re-queue them
+ * This handles jobs that were 'processing' when the server restarted or crashed.
+ */
+async function recoverOrphanedJobs() {
+    console.log('🧹 [Thumbnail Recovery] Starting scan for stuck jobs...');
+    try {
+        const { getFirestore } = require('../config/firebase.config');
+        const db = getFirestore();
+
+        // 1. Find docs in 'processing' state
+        // Check both collections (legacy support)
+        const [filesSnap, docsSnap] = await Promise.all([
+            db.collection('files').where('thumbnailStatus', '==', 'processing').get(),
+            db.collection('documents').where('thumbnailStatus', '==', 'processing').get()
+        ]);
+
+        const orphanedDocs = [];
+        const seenIds = new Set();
+
+        const addDocs = (snap) => {
+            snap.forEach(doc => {
+                const data = doc.data();
+                if (!seenIds.has(doc.id)) {
+                    orphanedDocs.push({ id: doc.id, ...data });
+                    seenIds.add(doc.id);
+                }
+            });
+        };
+
+        addDocs(filesSnap);
+        addDocs(docsSnap);
+
+        if (orphanedDocs.length === 0) {
+            console.log('   ✅ No orphaned thumbnail jobs found.');
+            return;
+        }
+
+        console.log(`   🚨 [Thumbnail Recovery] Found ${orphanedDocs.length} orphaned jobs. Re-queueing...`);
+
+        for (const doc of orphanedDocs) {
+            console.log(`      - Re-queueing: ${doc.fileName || doc.name || doc.id}`);
+            queueThumbnailJob({
+                filePath: doc.storagePath,
+                documentId: doc.documentId || doc.id,
+                userId: doc.userId,
+                fileType: doc.fileType,
+                fileName: doc.fileName || doc.name,
+                s3Key: doc.s3Key
+            });
+        }
+
+        console.log(`   ✨ [Thumbnail Recovery] Successfully re-queued ${orphanedDocs.length} jobs.`);
+    } catch (error) {
+        console.error('   ❌ [Thumbnail Recovery] Failed:', error.message);
+    }
+}
+
+function shutdownThumbnailQueue() {
+    if (cleanupInterval) {
+        clearInterval(cleanupInterval);
+        cleanupInterval = null;
+    }
+
+    jobQueue.length = 0;
+    processingJobs.clear();
+    completedJobs.clear();
+    failedJobs.clear();
+    activeWorkers = 0;
+    isProcessing = false;
+}
+
 module.exports = {
     queueThumbnailJob,
     getJobStatus,
     getQueueStats,
-    processQueue
+    processQueue,
+    recoverOrphanedJobs,
+    shutdownThumbnailQueue
 };

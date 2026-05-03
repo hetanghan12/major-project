@@ -44,49 +44,67 @@
   /* Gray-50 */
   --bg-card: #FFFFFF;
   --bg-elevated: #F3F4F6;
+  --bg-hover: #F3F4F6;
 
   /* Text */
   --text-primary: #111827;
   --text-secondary: #4B5563;
   --text-muted: #9CA3AF;
 
-  /* Layout */
+  /* Layout & Borders */
   --sidebar-width: 260px;
   --sidebar-collapsed-width: 72px;
   --header-height: 64px;
+  --border-color: #E5E7EB;
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+
+  /* Status Colors */
+  --danger: #EF4444;
+  --danger-bg: #FEF2F2;
+  --success: #10B981;
+  --success-bg: #F0FDF4;
+  --warning: #F59E0B;
+  --warning-bg: #FFFBEB;
 }
 
 /* Dark Theme Overrides */
 [data-theme="dark"] {
-  --primary: #6366F1;
-  /* Indigo-500 */
-  --primary-hover: #818CF8;
-  /* Indigo-400 */
-  --primary-light: rgba(99, 102, 241, 0.1);
+  --primary: #818CF8;
+  --primary-hover: #A5B4FC;
+  --primary-light: rgba(129, 140, 248, 0.15);
 
   --sidebar-bg: #111827;
-  /* Gray-900 */
-  --sidebar-border: #1F2937;
-  /* Gray-800 */
-  --sidebar-text: #9CA3AF;
-  /* Gray-400 */
-  --sidebar-text-hover: #F3F4F6;
-  /* Gray-100 */
+  --sidebar-border: #374151;
+  --sidebar-text: #E5E7EB;
+  /* Lighter gray for better visibility */
+  --sidebar-text-hover: #FFFFFF;
   --sidebar-bg-hover: #1F2937;
-  /* Gray-800 */
-  --sidebar-active-bg: rgba(99, 102, 241, 0.1);
-  --sidebar-active-text: #818CF8;
-  --sidebar-active-border: #6366F1;
+  --sidebar-active-bg: rgba(129, 140, 248, 0.2);
+  --sidebar-active-text: #FFFFFF;
+  --sidebar-active-border: #818CF8;
 
   --bg-main: #0F172A;
-  /* Slate-900 */
   --bg-card: #1E293B;
-  /* Slate-800 */
-  --bg-elevated: #334155;
+  --bg-elevated: #374151;
+  --bg-hover: #2D3748;
+  --border-color: #374151;
 
-  --text-primary: #F9FAFB;
+  --text-primary: #FFFFFF;
+  /* High contrast white */
   --text-secondary: #D1D5DB;
-  --text-muted: #6B7280;
+  /* Light gray */
+  --text-muted: #9CA3AF;
+  /* Medium gray */
+
+  /* Status Colors (Dark) */
+  --danger: #F87171;
+  --danger-bg: rgba(248, 113, 113, 0.1);
+  --success: #34D399;
+  --success-bg: rgba(52, 211, 153, 0.1);
+  --warning: #FBBF24;
+  --warning-bg: rgba(251, 191, 36, 0.1);
 }
 
 /* Base styles */
@@ -191,7 +209,8 @@
   }
 
   .sidebar-nav-item {
-    @apply flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium transition-all duration-200 cursor-pointer select-none mb-1;
+    @apply flex items-center gap-3 px-3 py-2.5 rounded-r-xl font-medium transition-all duration-200 cursor-pointer select-none mb-1;
+    padding-left: calc(0.75rem - 3px);
     color: var(--sidebar-text);
   }
 
@@ -204,8 +223,6 @@
     background: var(--sidebar-active-bg);
     color: var(--sidebar-active-text);
     border-left: 3px solid var(--sidebar-active-border);
-    border-top-left-radius: 0;
-    border-bottom-left-radius: 0;
   }
 
   .sidebar-nav-icon {
@@ -218,7 +235,7 @@
   }
 
   .sidebar-nav-item.active .sidebar-nav-icon {
-    color: var(--sidebar-active-text);
+    color: var(--sidebar-active-text) !important;
   }
 
   /* Icon Container for Dashboard */
@@ -230,22 +247,17 @@
     background: rgba(255, 255, 255, 0.2);
   }
 
-  /* Adjust padding for the border */
-  .sidebar-nav-item {
-    @apply flex items-center gap-3 px-3 py-2.5 rounded-r-xl font-medium transition-all duration-200 cursor-pointer select-none mb-1;
-    padding-left: calc(0.75rem - 3px);
-    /* Compensate for border */
-    color: var(--sidebar-text);
-  }
 
-  .sidebar.collapsed .sidebar-nav-item span {
+  .sidebar.collapsed .sidebar-nav-item span.sidebar-nav-label {
     display: none;
   }
 
-  .sidebar.collapsed .sidebar-nav-item {
-    justify-content: center;
-    padding-left: 0;
-    padding-right: 0;
+  .sidebar-nav-label {
+    @apply transition-opacity duration-200;
+  }
+
+  .sidebar.collapsed .sidebar-nav-label {
+    @apply opacity-0 w-0 overflow-hidden;
   }
 
   /* AI Icon Gradient */
@@ -316,8 +328,16 @@
   }
 
   .logout-btn-sidebar:hover {
-    background: rgba(239, 68, 68, 0.1);
+    background: rgba(239, 68, 68, 0.05);
     color: #EF4444;
+  }
+
+  .logout-indicator {
+    @apply w-1 h-5 bg-orange-500 rounded-full mr-0 opacity-0 transition-all;
+  }
+
+  .logout-btn-sidebar:hover .logout-indicator {
+    @apply opacity-100 mr-2;
   }
 
   /* ========== MOBILE RESPONSIVE ========== */
@@ -665,6 +685,12 @@
     @apply badge;
     background: rgba(249, 115, 22, 0.1);
     color: #F97316;
+  }
+
+  .badge-video {
+    @apply badge;
+    background: rgba(139, 92, 246, 0.1);
+    color: #8B5CF6;
   }
 
   /* ========== DOCUMENT GRID ========== */

@@ -12,7 +12,7 @@ export interface CloudFile {
     storagePath: string;
     publicUrl: string;
     vectorCount: number;
-    status: 'processing' | 'ready' | 'failed';
+    status: 'uploading' | 'processing' | 'completed' | 'cancelled' | 'failed' | 'ready';
     uploadedAt: string;
     modifiedAt?: string;
 
@@ -29,6 +29,10 @@ export interface CloudFile {
     thumbnailUrl?: string;
     thumbnailStatus?: 'processing' | 'ready' | 'failed';
     error?: string;
+
+    // Ownership & Collaboration
+    userId?: string;         // Firebase UID of the uploader
+    ownerUserId?: string;    // Firebase UID of the owner
 }
 
 export interface Folder extends CloudFile {

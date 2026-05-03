@@ -16,13 +16,12 @@ import { FormsModule } from '@angular/forms';
 import { Router, RouterLink, ActivatedRoute } from '@angular/router';
 import { AuthService, MfaLoginResult } from '../../core/services/auth.service';
 import { MultiFactorResolver } from 'firebase/auth';
-import { environment } from '../../../environments/environment';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 
 @Component({
-  selector: 'app-login',
   standalone: true,
+  selector: 'app-login',
   imports: [CommonModule, FormsModule, RouterLink],
   styleUrls: ['./login.component.css'],
   template: `
@@ -201,7 +200,7 @@ import { firstValueFrom } from 'rxjs';
                   <input type="checkbox" />
                   <span>Remember me</span>
                 </label>
-                <a href="#" class="forgot-link">Forgot password?</a>
+                <a routerLink="/forgot-password" class="forgot-link">Forgot password?</a>
               </div>
 
               <!-- Error message -->
@@ -227,22 +226,6 @@ import { firstValueFrom } from 'rxjs';
             </div>
 
             <!-- Demo Button -->
-            <button
-              (click)="fillTestCredentials(); login()"
-              class="btn-demo"
-              [disabled]="isLoading()"
-            >
-              <span class="btn-content">
-                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="18" height="18">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                        d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                        d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                </svg>
-                <span>Try Demo (No Login Required)</span>
-              </span>
-            </button>
-
             <!-- Google Sign In -->
             <button class="btn-social" type="button" (click)="loginWithGoogle()" [disabled]="isLoading()">
               <span class="btn-content">
@@ -382,23 +365,26 @@ export class LoginComponent {
         this.router.navigate(['/dashboard']);
         return;
       }
-      const res: any = await firstValueFrom(this.http.get(`${environment.apiUrl}/auth/profile`, {
+      
+      const res: any = await firstValueFrom(this.http.get(`/api/auth/profile`, {
         headers: { Authorization: `Bearer ${token}` }
       }));
+      
       const role = res.user?.role?.toLowerCase() || 'user';
-      if (role === 'admin' || res.user?.email === 'admin@cloudspace.com') {
+
+      if (role === 'admin') {
+        console.log('👑 Admin detected - Redirecting to Admin Control Center');
         this.router.navigate(['/admin/dashboard']);
       } else {
-        this.router.navigateByUrl(this.returnUrl === '/login' ? '/dashboard' : this.returnUrl);
+        console.log('👤 User detected - Redirecting to User Dashboard');
+        // If there's a returnUrl that isn't /login, use it, otherwise go to default dashboard
+        const targetUrl = (this.returnUrl && this.returnUrl !== '/login') ? this.returnUrl : '/dashboard';
+        this.router.navigateByUrl(targetUrl);
       }
     } catch (err) {
+      console.error('Redirection error:', err);
       this.router.navigate(['/dashboard']);
     }
-  }
-
-  fillTestCredentials(): void {
-    this.email = environment.testUser.email;
-    this.password = environment.testUser.password;
   }
 
   /**

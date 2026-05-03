@@ -40,8 +40,11 @@ const {
 const {
     getUploadProgress,
     registerSSEClient,
-    getUserActiveUploads
+    getUserActiveUploads,
+    cancelUpload
 } = require('../services/upload-progress.service');
+
+const { updateDocumentStatus } = require('../services/firestore.service');
 
 // =============================================================================
 // STORAGE STATISTICS
@@ -274,6 +277,58 @@ router.get('/upload/active',
             res.status(500).json({
                 success: false,
                 message: 'Failed to get active uploads'
+            });
+        }
+    }
+);
+
+/**
+ * Cancel an ongoing upload
+ * POST /api/uploads/cancel
+ */
+router.post('/uploads/cancel',
+    verifyFirebaseToken,
+    async (req, res) => {
+        const userId = req.user.uid;
+        const { uploadId } = req.body;
+
+        if (!uploadId) {
+            return res.status(400).json({
+                success: false,
+                message: 'uploadId is required'
+            });
+        }
+
+        try {
+            // 1. Verify upload exists and belongs to user
+            const progress = getUploadProgress(uploadId);
+            if (!progress || progress.userId !== userId) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Upload not found'
+                });
+            }
+
+            // 2. Update Firestore status ONLY if it's not already terminal
+            try {
+                await updateDocumentStatus(uploadId, 'cancelled');
+            } catch (fsError) {
+                console.warn(`[Cleanup] Firestore status update failed: ${fsError.message}`);
+            }
+
+            // 3. Trigger cancellation (includes local file deletion now)
+            cancelUpload(uploadId);
+
+            res.json({
+                success: true,
+                message: 'Upload cancelled'
+            });
+
+        } catch (error) {
+            console.error('Failed to cancel upload:', error.message);
+            res.status(500).json({
+                success: false,
+                message: 'Failed to cancel upload'
             });
         }
     }

@@ -1,4 +1,5 @@
 const { getFirestore, getAuth } = require('../config/firebase.config');
+const { deleteUserAccount } = require('../services/deletion.service');
 
 const DEFAULT_SETTINGS = {
     storage: {
@@ -53,7 +54,9 @@ exports.updateSettings = async (req, res) => {
         if (storage) updateData['settings.storage'] = storage;
         if (ai) updateData['settings.ai'] = ai;
 
-        await docRef.set(updateData, { merge: true });
+        if (Object.keys(updateData).length > 0) {
+            await docRef.update(updateData);
+        }
 
         res.json({ success: true, message: 'Settings updated successfully' });
     } catch (error) {
@@ -89,24 +92,28 @@ exports.clearAIHistory = async (req, res) => {
 
 /**
  * Delete User Account completely
+ * Pure-security operation - purges EVERYTHING.
  */
 exports.deleteAccount = async (req, res) => {
     try {
         const uid = req.user.uid;
-        const auth = getAuth();
-        const db = getFirestore();
+        
+        console.log(`❗ [ACCOUNT-PURGE] Request for user: ${uid}`);
 
-        // 1. Delete user record in Firestore
-        await db.collection('users').doc(uid).delete();
+        // Call the comprehensive deletion service
+        const result = await deleteUserAccount(uid);
 
-        // 2. We can optionally queue a deletion of AWS S3 and Pinecone vectors here
-
-        // 3. Delete from Firebase Auth
-        await auth.deleteUser(uid);
-
-        res.json({ success: true, message: 'Account deleted successfully' });
+        res.json({ 
+            success: true, 
+            message: 'Account and all associated data deleted successfully',
+            details: result
+        });
+        
     } catch (error) {
-        console.error('Error deleting account:', error);
-        res.status(500).json({ success: false, message: 'Failed to delete account' });
+        console.error('❌ Error processing account deletion:', error.message);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Failed to fully delete account. Some data may remain.' 
+        });
     }
 };

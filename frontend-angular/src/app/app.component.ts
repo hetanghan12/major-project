@@ -4,8 +4,8 @@ import { RouterOutlet } from '@angular/router';
 import { AuthService } from './core/services/auth.service';
 
 @Component({
-  selector: 'app-root',
   standalone: true,
+  selector: 'app-root',
   imports: [CommonModule, RouterOutlet],
   template: `<router-outlet></router-outlet>`,
   styles: [`

@@ -44,7 +44,7 @@ const EXPECTED_DIMENSION = 3072;
 /**
  * Generate embeddings for text
  * @param {string} text - Text to generate embeddings for
- * @returns {Array} Embedding vector (3072 dimensions)
+ * @returns {Object} { embedding, usage }
  */
 async function generateEmbedding(text) {
     const client = getOpenAI();
@@ -58,20 +58,21 @@ async function generateEmbedding(text) {
     });
 
     const embedding = response.data[0].embedding;
+    const usage = response.usage;
 
     // CRITICAL: Verify dimension
     if (embedding.length !== EXPECTED_DIMENSION) {
         throw new Error(`DIMENSION MISMATCH: Got ${embedding.length}, expected ${EXPECTED_DIMENSION}`);
     }
 
-    console.log(`   ✅ Generated embedding: ${embedding.length} dimensions`);
-    return embedding;
+    console.log(`   ✅ Generated embedding: ${embedding.length} dimensions (${usage.total_tokens} tokens)`);
+    return { embedding, usage };
 }
 
 /**
  * Generate embeddings for multiple texts
  * @param {Array} texts - Array of texts to generate embeddings for
- * @returns {Array} Array of embedding vectors (each 3072 dimensions)
+ * @returns {Object} { embeddings, usage }
  */
 async function generateEmbeddings(texts) {
     const client = getOpenAI();
@@ -85,6 +86,7 @@ async function generateEmbeddings(texts) {
     });
 
     const embeddings = response.data.map(item => item.embedding);
+    const usage = response.usage;
 
     // CRITICAL: Verify all dimensions
     for (let i = 0; i < embeddings.length; i++) {
@@ -93,23 +95,40 @@ async function generateEmbeddings(texts) {
         }
     }
 
-    console.log(`   ✅ Generated ${embeddings.length} embeddings: ${EXPECTED_DIMENSION} dimensions each`);
-    return embeddings;
+    console.log(`   ✅ Generated ${embeddings.length} embeddings: ${EXPECTED_DIMENSION} dimensions each (${usage.total_tokens} tokens)`);
+    return { embeddings, usage };
 }
 
 /**
  * Generate AI response using GPT
  * @param {string} question - User's question
  * @param {string} context - Context from documents
- * @returns {string} AI response
+ * @param {Array} history - Optional conversation history
+ * @returns {Object} { content, usage, model }
  */
-async function generateResponse(question, context) {
+async function generateResponse(question, context, history = []) {
     const client = getOpenAI();
+    const model = 'gpt-3.5-turbo';
 
     const systemPrompt = `You are a helpful AI assistant that answers questions based ONLY on the provided context. 
 If the context doesn't contain relevant information to answer the question, say "I couldn't find relevant information in your documents to answer this question."
 Never make up information or use knowledge outside of the provided context.`;
 
+    const messages = [
+        { role: 'system', content: systemPrompt }
+    ];
+
+    // Add conversation history
+    if (history && history.length > 0) {
+        history.forEach(msg => {
+            messages.push({
+                role: msg.role === 'assistant' ? 'assistant' : 'user',
+                content: msg.content
+            });
+        });
+    }
+
+    // Add current context and question
     const userPrompt = `Context from user's documents:
 ${context}
 
@@ -117,17 +136,20 @@ User's question: ${question}
 
 Please provide a helpful answer based only on the context above.`;
 
+    messages.push({ role: 'user', content: userPrompt });
+
     const response = await client.chat.completions.create({
-        model: 'gpt-3.5-turbo',
-        messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt }
-        ],
+        model,
+        messages,
         temperature: 0.3,
         max_tokens: 1000
     });
 
-    return response.choices[0].message.content;
+    return {
+        content: response.choices[0].message.content,
+        usage: response.usage,
+        model
+    };
 }
 
 module.exports = {

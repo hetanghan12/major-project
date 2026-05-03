@@ -17,6 +17,8 @@ export interface UnifiedDashboardData {
         starredCount: number;
         sharedCount: number;
         aiTasksCount: number;
+        aiTasksLimit: number;
+        aiTasksRemaining: number;
     };
     recentDocuments: any[];
     typeDistribution: {

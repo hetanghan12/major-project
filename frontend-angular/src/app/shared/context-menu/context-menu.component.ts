@@ -7,10 +7,11 @@
 import { Component, Input, Output, EventEmitter, HostListener, ElementRef, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { CloudFile, ContextMenuAction } from '../../core/models/file.model';
+import { AuthService } from '../../core/services/auth.service';
 
 @Component({
-    selector: 'app-context-menu',
     standalone: true,
+    selector: 'app-context-menu',
     imports: [CommonModule],
     template: `
         <div 
@@ -36,10 +37,10 @@ import { CloudFile, ContextMenuAction } from '../../core/models/file.model';
         .context-menu {
             position: fixed;
             min-width: 200px;
-            background: white;
+            background: var(--bg-card, white);
             border-radius: 8px;
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
-            border: 1px solid #e5e7eb;
+            border: 1px solid var(--border-color, #e5e7eb);
             padding: 4px 0;
             z-index: 1000;
             animation: fadeIn 0.1s ease-out;
@@ -57,17 +58,18 @@ import { CloudFile, ContextMenuAction } from '../../core/models/file.model';
             width: 100%;
             padding: 10px 16px;
             font-size: 14px;
-            color: #374151;
+            color: var(--text-primary, #374151);
             transition: background 0.15s;
             text-align: left;
+            background: transparent;
         }
 
         .context-menu-item:hover:not(.disabled) {
-            background: #f3f4f6;
+            background: var(--bg-hover, #f3f4f6);
         }
 
         .context-menu-item.divider-top {
-            border-top: 1px solid #e5e7eb;
+            border-top: 1px solid var(--border-color, #e5e7eb);
             margin-top: 4px;
             padding-top: 14px;
         }
@@ -77,7 +79,7 @@ import { CloudFile, ContextMenuAction } from '../../core/models/file.model';
         }
 
         .context-menu-item.danger:hover {
-            background: #fef2f2;
+            background: var(--danger-bg, #fef2f2);
         }
 
         .context-menu-item.disabled {
@@ -103,12 +105,16 @@ export class ContextMenuComponent implements OnInit {
     @Input() x: number = 0;
     @Input() y: number = 0;
     @Input() file: CloudFile | null = null;
+    @Input() currentFilter: string | null = null;
     @Output() action = new EventEmitter<string>();
     @Output() close = new EventEmitter<void>();
 
     actions: ContextMenuAction[] = [];
 
-    constructor(private elementRef: ElementRef) { }
+    constructor(
+        private elementRef: ElementRef,
+        private authService: AuthService
+    ) { }
 
     ngOnInit() {
         this.buildActions();
@@ -147,17 +153,37 @@ export class ContextMenuComponent implements OnInit {
                 { id: 'delete-permanent', label: 'Delete permanently', icon: svgTrash, danger: true, divider: true }
             ];
         } else {
+            const currentUserId = this.authService.currentUser()?.uid;
+            const ownerId = this.file.ownerUserId || this.file.userId;
+            const isOwner = currentUserId === ownerId;
+
             this.actions = [
                 { id: 'preview', label: 'Preview', icon: svgOpen },
                 { id: 'download', label: 'Download', icon: svgDownload, disabled: this.file.isFolder },
                 { id: this.file.isStarred ? 'unstar' : 'star', label: this.file.isStarred ? 'Remove from starred' : 'Add to starred', icon: svgStar, divider: true },
                 { id: 'rename', label: 'Rename', icon: svgRename },
                 { id: 'move', label: 'Move to', icon: svgMove },
-                { id: 'copy', label: 'Make a copy', icon: svgCopy },
-                { id: 'share', label: 'Share', icon: svgShare, divider: true },
-                { id: 'details', label: 'File details', icon: svgDetails },
-                { id: 'delete', label: 'Move to trash', icon: svgTrash, danger: true, divider: true }
+                { id: 'copy', label: 'Make a copy', icon: svgCopy }
             ];
+
+            // Only owners can share or stop sharing
+            if (isOwner) {
+                this.actions.push(
+                    { id: 'share', label: 'Share', icon: svgShare, divider: true }
+                );
+
+                // Requirement: Only show 'Stop sharing' in 'shared-by-me' view
+                if (this.currentFilter === 'shared-by-me') {
+                    this.actions.push(
+                        { id: 'stop-sharing', label: 'Stop sharing', icon: svgTrash }
+                    );
+                }
+            }
+
+            this.actions.push(
+                { id: 'details', label: 'File details', icon: svgDetails, divider: !isOwner },
+                { id: 'delete', label: 'Move to trash', icon: svgTrash, danger: true, divider: true }
+            );
         }
     }
 

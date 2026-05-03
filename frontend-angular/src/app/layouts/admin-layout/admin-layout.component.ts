@@ -1,10 +1,12 @@
-import { Component, inject } from '@angular/core';
+import { Component, inject, signal, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule, Router } from '@angular/router';
+import { AuthService } from '../../core/services/auth.service';
+import { AdminService } from '../../core/services/admin.service';
 
 @Component({
-    selector: 'app-admin-layout',
     standalone: true,
+    selector: 'app-admin-layout',
     imports: [CommonModule, RouterModule],
     template: `
     <div class="admin-container">
@@ -51,15 +53,15 @@ import { RouterModule, Router } from '@angular/router';
             <h3 class="section-label">OPERATIONS</h3>
             <ul class="nav-links">
               <li>
-                <a routerLink="ai-usage" routerLinkActive="active">
-                  <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-                  <span>AI Assistant Usage</span>
-                </a>
-              </li>
-              <li>
                 <a routerLink="plans" routerLinkActive="active">
                   <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
                   <span>Subscription Plans</span>
+                </a>
+              </li>
+              <li>
+                <a routerLink="subscriptions" routerLinkActive="active">
+                  <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+                  <span>Subscribers</span>
                 </a>
               </li>
             </ul>
@@ -91,9 +93,9 @@ import { RouterModule, Router } from '@angular/router';
         </div>
 
         <div class="sidebar-footer">
-          <button class="back-link" (click)="goBack()">
-            <span>Logout</span>
+          <button type="button" class="back-link logout-btn-red" (click)="handleLogout()">
             <svg class="icon small-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+            <span>Logout</span>
           </button>
         </div>
       </nav>
@@ -110,28 +112,58 @@ import { RouterModule, Router } from '@angular/router';
            
            <div class="header-search">
               <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" class="search-icon"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-              <input type="text" placeholder="Search files, folders, or ask AI...">
+              <input type="text" placeholder="Search files, logs, or metrics...">
            </div>
 
            <div class="header-actions">
-             <button class="btn-ai-header">
-               <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-               AI Assistant
-             </button>
+             <div class="relative">
+                <button class="notification-btn" (click)="toggleNotifications($event)">
+                  <svg viewBox="0 0 24 24" width="20" height="20" stroke="#64748b" stroke-width="2" fill="none"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+                  <span class="badge" *ngIf="unreadCount() > 0">{{ unreadCount() }}</span>
+                </button>
+
+                <!-- Admin Notification Dropdown -->
+                <div *ngIf="showNotifications()" class="notification-dropdown">
+                    <div class="dropdown-header">
+                        <h3>Notifications</h3>
+                        <button (click)="markAllRead()" class="text-link">Mark all as read</button>
+                    </div>
+                    <div class="dropdown-content">
+                        <div *ngIf="notifications().length === 0" class="empty-state">
+                            No notifications yet
+                        </div>
+                        <div *ngFor="let note of notifications()" class="notification-item" [class.unread]="!note.read">
+                            <div class="note-icon" [ngClass]="note.type.toLowerCase()">
+                                <span *ngIf="note.type === 'USER_SIGNUP'">👤</span>
+                                <span *ngIf="note.type === 'SECURITY'">🔒</span>
+                                <span *ngIf="note.type === 'SYSTEM_ALERT'">⚠️</span>
+                            </div>
+                            <div class="note-body">
+                                <p class="note-message">{{ note.message }}</p>
+                                <span class="note-time">{{ note.createdAt | date:'shortTime' }}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+             </div>
              
-             <button class="notification-btn">
-               <svg viewBox="0 0 24 24" width="20" height="20" stroke="#64748b" stroke-width="2" fill="none"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
-               <span class="badge">2</span>
-             </button>
-             
-             <div class="user-profile">
-               <div class="avatar">A</div>
+             <div class="user-profile" *ngIf="authService.currentUser$ | async as user; else loading">
+               <div class="avatar">{{ (user.displayName || user.email || 'A').charAt(0).toUpperCase() }}</div>
                <div class="user-info">
-                 <span class="user-name">Admin</span>
-                 <span class="user-email">admin&#64;cloudspace.com</span>
+                 <span class="user-name">{{ user.displayName || 'Admin' }}</span>
+                 <span class="user-email">{{ user.email }}</span>
                </div>
                <svg viewBox="0 0 24 24" width="16" height="16" stroke="#94a3b8" stroke-width="2" fill="none"><polyline points="6 9 12 15 18 9"></polyline></svg>
              </div>
+
+             <ng-template #loading>
+               <div class="user-profile">
+                 <div class="avatar">...</div>
+                 <div class="user-info">
+                   <span class="user-name">Loading...</span>
+                 </div>
+               </div>
+             </ng-template>
            </div>
         </header>
 
@@ -146,24 +178,76 @@ import { RouterModule, Router } from '@angular/router';
       display: block;
       height: 100vh;
       font-family: 'Inter', -apple-system, sans-serif;
-      background: #fdfdfd;
-      color: #1a1a1b;
+      background: var(--bg-main);
+      color: var(--text-primary);
     }
+    /* Notification Dropdown Styles */
+    .relative { position: relative; }
+    .notification-dropdown {
+        position: absolute;
+        top: 40px;
+        right: 0;
+        width: 320px;
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1);
+        z-index: 1000;
+        overflow: hidden;
+    }
+    .dropdown-header {
+        padding: 1rem;
+        border-bottom: 1px solid var(--border-color);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: var(--bg-card);
+    }
+    .dropdown-header h3 { font-size: 14px; font-weight: 700; margin: 0; }
+    .text-link { background: none; border: none; font-size: 11px; color: #6E56EB; cursor: pointer; font-weight: 600; }
+    .dropdown-content { max-height: 400px; overflow-y: auto; }
+    .notification-item {
+        padding: 1rem;
+        display: flex;
+        gap: 12px;
+        border-bottom: 1px solid #f8fafc;
+        transition: background 0.2s;
+        cursor: pointer;
+    }
+    .notification-item.unread { background: #faf9ff; }
+    .notification-item:hover { background: #f8fafc; }
+    .note-icon {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 16px;
+        flex-shrink: 0;
+    }
+    .note-icon.user_signup { background: #e0f2fe; }
+    .note-icon.security { background: #fee2e2; }
+    .note-icon.system_alert { background: #fef3c7; }
+    .note-message { font-size: 12.5px; color: #334155; margin: 0; line-height: 1.4; font-weight: 500; }
+    .note-time { font-size: 10px; color: #94a3b8; display: block; margin-top: 4px; }
+    .empty-state { padding: 3rem; text-align: center; color: #94a3b8; font-size: 13px; }
+
     .admin-container {
       display: flex;
       height: 100%;
     }
     .sidebar {
       width: 260px;
-      background: #ffffff;
+      background: var(--bg-card);
       height: 100%;
-      border-right: 1px solid #f1f1f1;
+      border-right: 1px solid var(--border-color);
       display: flex;
       flex-direction: column;
     }
     .sidebar-header {
       padding: 1.5rem;
-      border-bottom: 1px solid #f1f1f1;
+      border-bottom: 1px solid var(--border-color);
       height: 72px;
       display: flex;
       align-items: center;
@@ -181,7 +265,7 @@ import { RouterModule, Router } from '@angular/router';
     .logo-text {
       font-size: 16px;
       font-weight: 700;
-      color: #111827;
+      color: var(--text-primary);
       letter-spacing: -0.3px;
     }
     .nav-content {
@@ -214,19 +298,19 @@ import { RouterModule, Router } from '@angular/router';
       gap: 12px;
       padding: 0.75rem 1.25rem;
       text-decoration: none;
-      color: #64748b;
+      color: var(--text-secondary);
       font-size: 13.5px;
       font-weight: 500;
       transition: all 0.2s ease;
       border-radius: 8px;
     }
     .nav-links a:hover {
-      background: #f8fafc;
-      color: #6E56EB;
+      background: var(--bg-hover);
+      color: var(--primary);
     }
     .nav-links a.active {
-      background: #faf9ff;
-      color: #6E56EB;
+      background: var(--primary-light);
+      color: var(--primary);
       position: relative;
     }
     .nav-links a.active::before {
@@ -236,7 +320,7 @@ import { RouterModule, Router } from '@angular/router';
       top: 0;
       height: 100%;
       width: 3px;
-      background: #6E56EB;
+      background: var(--primary);
       border-radius: 0 4px 4px 0;
     }
     .icon {
@@ -252,17 +336,26 @@ import { RouterModule, Router } from '@angular/router';
       width: 100%;
       display: flex;
       align-items: center;
-      justify-content: flex-end;
-      gap: 8px;
-      padding: 0.75rem 1rem;
+      justify-content: flex-start;
+      gap: 12px;
+      padding: 0.8rem 1.25rem;
       background: transparent;
       border: 1px solid transparent;
-      border-radius: 8px;
+      border-radius: 10px;
       color: #94a3b8;
-      font-size: 13px;
+      font-size: 13.5px;
       font-weight: 500;
       cursor: pointer;
       transition: all 0.2s;
+    }
+    .logout-btn-red {
+      color: #ef4444 !important;
+      font-weight: 700 !important;
+      margin-top: 8px;
+    }
+    .logout-btn-red:hover {
+      background: #fef2f2 !important;
+      color: #dc2626 !important;
     }
     .small-icon {
       width: 16px;
@@ -277,12 +370,12 @@ import { RouterModule, Router } from '@angular/router';
       display: flex;
       flex-direction: column;
       overflow: hidden;
-      background: #ffffff;
+      background: var(--bg-main);
     }
     .admin-header {
       height: 72px;
-      background: #ffffff;
-      border-bottom: 1px solid #f1f1f1;
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border-color);
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -304,7 +397,7 @@ import { RouterModule, Router } from '@angular/router';
     .header-title {
       font-size: 18px;
       font-weight: 700;
-      color: #1e293b;
+      color: var(--text-primary);
       margin: 0;
     }
     .header-search {
@@ -323,35 +416,22 @@ import { RouterModule, Router } from '@angular/router';
     .header-search input {
       width: 100%;
       padding: 0.6rem 1rem 0.6rem 2.5rem;
-      border: 1px solid #f1f1f1;
+      border: 1px solid var(--border-color);
       border-radius: 8px;
-      background: #f8fafc;
+      background: var(--bg-main);
       font-size: 13px;
-      color: #333;
+      color: var(--text-primary);
       outline: none;
       transition: border-color 0.2s;
     }
     .header-search input:focus {
       border-color: #cbd5e1;
-      background: #fff;
+      background: var(--bg-card);
     }
     .header-actions {
       display: flex;
       align-items: center;
       gap: 1.5rem;
-    }
-    .btn-ai-header {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      background: #6E56EB;
-      color: white;
-      border: none;
-      padding: 0.5rem 1rem;
-      border-radius: 8px;
-      font-size: 13px;
-      font-weight: 600;
-      cursor: pointer;
     }
     .notification-btn {
       position: relative;
@@ -401,23 +481,76 @@ import { RouterModule, Router } from '@angular/router';
     .user-name {
       font-size: 13px;
       font-weight: 600;
-      color: #1e293b;
+      color: var(--text-primary);
     }
     .user-email {
       font-size: 11px;
-      color: #94a3b8;
+      color: var(--text-muted);
     }
     .page-container {
       flex: 1;
       padding: 2.5rem 2rem;
       overflow-y: auto;
-      background: #fafafb;
+      background: var(--bg-main);
       position: relative;
     }
   `]
 })
-export class AdminLayoutComponent {
+export class AdminLayoutComponent implements OnInit, OnDestroy {
     private router = inject(Router);
+    public authService = inject(AuthService);
+    private adminService = inject(AdminService);
+
+    notifications = signal<any[]>([]);
+    unreadCount = signal(0);
+    showNotifications = signal(false);
+    private pollInterval: any;
+
+    ngOnInit() {
+        this.loadNotifications();
+        // Start polling for admin notifications every 60 seconds
+        this.pollInterval = setInterval(() => this.loadNotifications(), 60000);
+        
+        // Listen for global clicks to close dropdown
+        document.addEventListener('click', this.handleOutsideClick.bind(this));
+    }
+
+    ngOnDestroy() {
+        if (this.pollInterval) clearInterval(this.pollInterval);
+        document.removeEventListener('click', this.handleOutsideClick.bind(this));
+    }
+
+    async loadNotifications() {
+        try {
+            const res = await this.adminService.getNotifications();
+            if (res.success) {
+                this.notifications.set(res.data || []);
+                this.unreadCount.set(this.notifications().filter(n => !n.read).length);
+            }
+        } catch (error) {
+            console.warn('Failed to load admin notifications');
+        }
+    }
+
+    toggleNotifications(event: MouseEvent) {
+        event.stopPropagation();
+        this.showNotifications.set(!this.showNotifications());
+    }
+
+    handleOutsideClick(event: any) {
+        if (this.showNotifications() && !event.target.closest('.notification-dropdown') && !event.target.closest('.notification-btn')) {
+            this.showNotifications.set(false);
+        }
+    }
+
+    async markAllRead() {
+        try {
+            await this.adminService.markNotificationsRead();
+            this.loadNotifications(); // Refresh list
+        } catch (error) {
+            console.error('Failed to mark all as read');
+        }
+    }
 
     currentRoute() {
         const url = this.router.url;
@@ -425,7 +558,17 @@ export class AdminLayoutComponent {
         return parts[parts.length - 1] || 'Dashboard';
     }
 
-    goBack() {
-        this.router.navigate(['/dashboard']);
+    async handleLogout() {
+        console.log('🛑 ADMIN LOGOUT INITIATED');
+        try {
+            await this.authService.logout();
+            localStorage.clear();
+            sessionStorage.clear();
+            console.log('✅ Session cleared - Redirecting to login');
+            window.location.href = '/login';
+        } catch (error) {
+            console.error('❌ Logout failed:', error);
+            window.location.href = '/login';
+        }
     }
 }

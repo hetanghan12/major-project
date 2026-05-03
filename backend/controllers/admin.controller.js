@@ -72,32 +72,73 @@ exports.getUnifiedDashboard = async (req, res) => {
         };
 
         try {
-            const docsSnap = await firestore.collection('documents').get();
-            docsSnap.forEach(doc => {
-                const data = doc.data();
-                if (data.isFolder) return; // Skip folders
+            const [filesSnap, documentsSnap] = await Promise.all([
+                firestore.collection('files').get(),
+                firestore.collection('documents').get()
+            ]);
 
-                const size = data.fileSize || 0;
-                totalFiles++;
-                totalStorageBytes += size;
+            // DEDUPLICATION: Use a Map keyed by documentId to prevent counting
+            // the same file twice across 'files' and 'documents' collections.
+            // Also skip ghost/analytics-only records that lack a proper documentId.
+            const uniqueFiles = new Map();
 
-                // Categorize by file type
-                const category = getCategory(data.fileType, data.fileName);
-                if (typeDistribution[category]) {
-                    typeDistribution[category].count++;
-                    typeDistribution[category].bytes += size;
-                } else {
-                    typeDistribution.other.count++;
-                    typeDistribution.other.bytes += size;
-                }
+            const collectUniqueFiles = (snap) => {
+                snap.forEach(doc => {
+                    const data = doc.data();
+                    const docId = data.documentId || data.fileId || doc.id;
 
-                // Count today's uploads
-                const uploadDate = (data.uploadedAt || data.createdAt || '').split('T')[0];
-                if (uploadDate === todayStr) {
-                    uploadsToday++;
+                    // Skip analytics-only ghost records (created by old logFileUpload bug)
+                    // These records lack a documentId field and have storageProvider set
+                    if (!data.documentId && !data.uploadId && data.storageProvider) {
+                        return;
+                    }
+
+                    // Use documentId as unique key to avoid double counting
+                    // If we've already seen this doc, keep the one with more data (higher status priority)
+                    if (!uniqueFiles.has(docId)) {
+                        uniqueFiles.set(docId, data);
+                    } else {
+                        // Keep the record with completed status or more metadata
+                        const existing = uniqueFiles.get(docId);
+                        if (data.status === 'completed' && existing.status !== 'completed') {
+                            uniqueFiles.set(docId, data);
+                        }
+                    }
+                });
+            };
+
+            collectUniqueFiles(filesSnap);
+            collectUniqueFiles(documentsSnap);
+
+            // Now count from deduplicated records
+            uniqueFiles.forEach((data, docId) => {
+                const isFolder = data.isFolder || data.fileType === 'folder';
+
+                const size = data.fileSize || data.size || 0;
+                const name = data.fileName || data.name || 'Untitled';
+                const type = data.fileType || 'unknown';
+
+                if (!isFolder) {
+                    totalFiles++;
+                    totalStorageBytes += size;
+
+                    const category = getCategory(type, name);
+                    if (typeDistribution[category]) {
+                        typeDistribution[category].count++;
+                        typeDistribution[category].bytes += size;
+                    } else {
+                        typeDistribution.other.count++;
+                        typeDistribution.other.bytes += size;
+                    }
+
+                    const uploadDate = (data.uploadedAt || data.createdAt || '').toString().split('T')[0];
+                    if (uploadDate === todayStr) {
+                        uploadsToday++;
+                    }
                 }
             });
-            console.log(`📊 [ADMIN] Real stats: ${totalFiles} files, ${totalStorageBytes} bytes`);
+            
+            console.log(`📊 [ADMIN] Real stats (Deduplicated): ${totalFiles} files, ${totalStorageBytes} bytes`);
         } catch (docsErr) {
             console.error('Documents scan failed:', docsErr.message);
         }
@@ -137,8 +178,11 @@ exports.getUnifiedDashboard = async (req, res) => {
         // ============================================================
         // 4. Sync back to analytics/global_stats (keep it updated)
         // ============================================================
+        let globalData = {};
         try {
-            const { admin } = require('../config/firebase.config');
+            const globalDoc = await firestore.collection('analytics').doc('global_stats').get();
+            globalData = globalDoc.exists ? globalDoc.data() : {};
+
             await firestore.collection('analytics').doc('global_stats').set({
                 totalUsers,
                 totalFiles,
@@ -146,6 +190,9 @@ exports.getUnifiedDashboard = async (req, res) => {
                 totalStorageUsed: totalStorageBytes,
                 uploadsToday,
                 typeDistribution,
+                aiRequestsToday: globalData.aiRequestsToday || 0,
+                totalTokens: globalData.totalTokens || 0,
+                estimatedCost: globalData.estimatedCost || 0,
                 lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
                 syncedAt: new Date().toISOString()
             });
@@ -161,7 +208,9 @@ exports.getUnifiedDashboard = async (req, res) => {
                 totalFiles,
                 totalStorageBytes,
                 uploadsToday,
-                aiRequestsToday: 0
+                aiRequestsToday: globalData.aiRequestsToday || 0,
+                totalTokens: globalData.totalTokens || 0,
+                estimatedCost: globalData.estimatedCost || 0
             },
             storageActivity: dailyStats.map(d => ({ label: d.day, value: (d.storageUsed / (1024 * 1024)).toFixed(2) })),
             typeDistribution,
@@ -244,6 +293,7 @@ exports.getUsers = async (req, res) => {
                 role: profile.role || 'User',
                 status: profile.status || (u.disabled ? 'Suspended' : 'Active'),
                 createdAt: profile.createdAt || u.metadata.creationTime,
+                lastLoginAt: u.metadata.lastSignInTime,
                 storageUsed: profile.storageUsed || 0,
                 isLocked: !!lock.lockedUntil && new Date(lock.lockedUntil).getTime() > Date.now(),
                 lockDetails: lock
@@ -391,56 +441,23 @@ exports.getAuditLogs = async (req, res) => {
     }
 };
 
-const DEFAULT_SETTINGS = {
-    systemName: "Cloud Space",
-    adminEmail: "admin@cloudspace.com",
-    maxFileSizeMB: 500,
-    registrationOpen: true,
-    maintenanceMode: false,
-    sessionTimeout: 60,
-    maxLoginAttempts: 5,
-    require2FA: false,
-    emailOnNewUser: true,
-    emailOnFileUpload: false,
-    emailOnError: true,
-    weeklyReport: true
-};
+const settingsService = require('../services/settings.service');
 
 exports.getSettings = async (req, res) => {
-    const now = Date.now();
-    if (cachedSystemSettings && (now - cachedSettingsTimestamp < SETTINGS_CACHE_TTL)) {
-        return res.status(200).json({ success: true, data: cachedSystemSettings, fromCache: true });
-    }
-
     try {
-        const firestore = getFirestore();
-        const doc = await firestore.collection('system_settings').doc('global').get();
-
-        const settings = doc.exists ? { ...DEFAULT_SETTINGS, ...doc.data() } : DEFAULT_SETTINGS;
-
-        cachedSystemSettings = settings;
-        cachedSettingsTimestamp = now;
-
+        const settings = await settingsService.getSettings();
         return res.status(200).json({ success: true, data: settings });
     } catch (error) {
-        if (cachedSystemSettings) return res.status(200).json({ success: true, data: cachedSystemSettings });
         return res.status(500).json({ success: false, message: 'Failed to fetch settings', error: error.message });
     }
 };
 
 exports.updateSettings = async (req, res) => {
     try {
-        const firestore = getFirestore();
         const settings = req.body;
-        settings.updatedAt = new Date().toISOString();
+        const updated = await settingsService.updateSettings(settings);
 
-        await firestore.collection('system_settings').doc('global').set(settings, { merge: true });
-
-        // Invalidate cache
-        cachedSystemSettings = null;
-        cachedSettingsTimestamp = 0;
-
-        await logAuditEvent('SETTINGS_UPDATE', req.user.email, req.user.uid, req, 'Success', settings);
+        await logAuditEvent('SETTINGS_UPDATE', req.user.email, req.user.uid, req, 'Success', updated);
 
         return res.status(200).json({ success: true, message: 'Settings updated' });
     } catch (error) {
@@ -544,5 +561,25 @@ exports.getAiUsageMetrics = async (req, res) => {
             return res.status(200).json({ success: true, data: { totalCalls: 0, totalTokens: 0, totalCostUSD: "0.00", activeModels: [] }, quotaExceeded: true });
         }
         return res.status(500).json({ success: false, message: 'Failed to fetch AI metrics', error: error.message });
+    }
+};
+// --- 5. Admin Notifications ---
+exports.getNotifications = async (req, res) => {
+    try {
+        const { getAdminNotifications } = require('../services/notification.service');
+        const notifications = await getAdminNotifications(20);
+        return res.status(200).json({ success: true, data: notifications });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: 'Failed to fetch admin notifications', error: error.message });
+    }
+};
+
+exports.markNotificationsRead = async (req, res) => {
+    try {
+        const { markAllAdminRead } = require('../services/notification.service');
+        await markAllAdminRead();
+        return res.status(200).json({ success: true, message: 'All admin notifications marked as read' });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: 'Failed to mark notifications as read', error: error.message });
     }
 };

@@ -55,14 +55,23 @@ async function parseXlsxFile(filePath, documentId, s3Key) {
 
     try {
         const workbook = new ExcelJS.Workbook();
+        const isCsv = (s3Key && s3Key.toLowerCase().endsWith('.csv')) || (filePath && filePath.toLowerCase().endsWith('.csv'));
 
         if (s3Key) {
             const buffer = await getFileBuffer(s3Key);
-            await workbook.xlsx.load(buffer);
+            if (isCsv) {
+                await workbook.csv.read(buffer); // Note: ExcelJS uses workbook.csv.read for buffers
+            } else {
+                await workbook.xlsx.load(buffer);
+            }
         } else if (filePath && fs.existsSync(filePath)) {
-            await workbook.xlsx.readFile(filePath);
+            if (isCsv) {
+                await workbook.csv.readFile(filePath);
+            } else {
+                await workbook.xlsx.readFile(filePath);
+            }
         } else {
-            throw new Error('No valid file source (S3 or local) found for XLSX parsing');
+            throw new Error('No valid file source (S3 or local) found for spreadsheet parsing');
         }
 
         const sheets = [];

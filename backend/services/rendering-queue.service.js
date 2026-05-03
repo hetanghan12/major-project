@@ -152,7 +152,7 @@ async function processJob(job) {
         );
 
         // Update database with thumbnail URL
-        await updateDocumentStatus(job.documentId, 'ready', {
+        await updateDocumentStatus(job.documentId, 'completed', {
             thumbnailUrl: result.thumbnailUrl,
             thumbnailGenerated: true,
             thumbnailGeneratedAt: new Date().toISOString()
@@ -199,7 +199,7 @@ async function processJob(job) {
             // Update document with failure status
             try {
                 const { updateDocumentStatus } = require('./firestore.service');
-                await updateDocumentStatus(job.documentId, 'ready', {
+                await updateDocumentStatus(job.documentId, 'completed', {
                     thumbnailUrl: null,
                     thumbnailError: error.message
                 });

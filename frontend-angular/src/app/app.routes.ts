@@ -15,12 +15,13 @@ export const routes: Routes = [
         loadComponent: () => import('./auth/register/register.component').then(m => m.RegisterComponent),
         canActivate: [guestGuard]
     },
-
-    // Simple upload route (no auth required - for testing)
     {
-        path: 'upload',
-        loadComponent: () => import('./simple-upload/simple-upload.component').then(m => m.SimpleUploadComponent)
+        path: 'forgot-password',
+        loadComponent: () => import('./auth/forgot-password/forgot-password.component').then(m => m.ForgotPasswordComponent),
+        canActivate: [guestGuard]
     },
+
+
 
     // User Panel routes (require User Dashboard Layout)
     {
@@ -78,6 +79,7 @@ export const routes: Routes = [
             { path: 'plans', loadComponent: () => import('./admin/plans/plans.component').then(m => m.AdminPlansComponent) },
             { path: 'audit', loadComponent: () => import('./admin/audit-logs/audit-logs.component').then(m => m.AdminAuditLogsComponent) },
             { path: 'analytics', loadComponent: () => import('./admin/analytics/analytics.component').then(m => m.ReportsComponent) },
+            { path: 'subscriptions', loadComponent: () => import('./admin/subscriptions/subscriptions.component').then(m => m.SubscriptionsComponent) },
             { path: 'settings', loadComponent: () => import('./admin/settings/settings.component').then(m => m.AdminSettingsComponent) }
         ]
     },

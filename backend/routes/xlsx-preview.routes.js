@@ -1,13 +1,8 @@
 /**
  * XLSX Preview Routes - Serve Spreadsheet Previews
- * =================================================
- * 
- * API endpoints for:
- * - Serving HTML previews
- * - Getting sheet data as JSON
- * - Regenerating previews
- * 
- * @author CloudAI Spreadsheet Engine
+ * ================================================
+ *
+ * All routes require authentication and document access.
  */
 
 const express = require('express');
@@ -15,25 +10,45 @@ const router = express.Router();
 const path = require('path');
 const fs = require('fs');
 const { parseXlsxFile, CONFIG } = require('../services/xlsx-parser.service');
+const { verifyFirebaseToken } = require('../middlewares/auth.middleware');
+const { resolveDoc } = require('../services/firestore.service');
+const { checkAccess } = require('../services/share.service');
 
-// =============================================================================
-// GET PREVIEW HTML
-// =============================================================================
+async function getAccessibleSpreadsheetDocument(userId, documentId) {
+    const access = await checkAccess(userId, documentId, null);
+    if (!access.allowed) {
+        return { status: 403, error: 'Access denied' };
+    }
 
-/**
- * GET /api/xlsx/preview/:documentId
- * 
- * Serves the interactive HTML preview for a spreadsheet
- */
-router.get('/preview/:documentId', (req, res) => {
+    const resolved = await resolveDoc(documentId);
+    if (!resolved.exists || !resolved.data) {
+        return { status: 404, error: 'Document not found' };
+    }
+
+    return { status: 200, document: resolved.data, access };
+}
+
+function getPreviewPaths(documentId) {
+    return {
+        previewPath: path.join(CONFIG.PREVIEW_DIR, `${documentId}.html`),
+        sheetsPath: path.join(CONFIG.PREVIEW_DIR, `${documentId}.json`)
+    };
+}
+
+async function regeneratePreview(document, documentId) {
+    return parseXlsxFile(document.storagePath || null, documentId, document.s3Key || null);
+}
+
+router.get('/preview/:documentId', verifyFirebaseToken, async (req, res) => {
     const { documentId } = req.params;
+    const accessResult = await getAccessibleSpreadsheetDocument(req.user.uid, documentId);
 
-    console.log(`📊 Serving XLSX preview: ${documentId}`);
+    if (accessResult.status !== 200) {
+        return res.status(accessResult.status).json({ success: false, error: accessResult.error });
+    }
 
-    const previewPath = path.join(CONFIG.PREVIEW_DIR, `${documentId}.html`);
-
+    const { previewPath } = getPreviewPaths(documentId);
     if (!fs.existsSync(previewPath)) {
-        console.log(`   ⚠️ Preview not found: ${previewPath}`);
         return res.status(404).json({
             success: false,
             error: 'Preview not found. File may still be processing.'
@@ -41,67 +56,43 @@ router.get('/preview/:documentId', (req, res) => {
     }
 
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.setHeader('Cache-Control', 'public, max-age=3600');
-    res.sendFile(previewPath);
+    res.setHeader('Cache-Control', 'private, no-store');
+    return res.sendFile(previewPath);
 });
 
-// =============================================================================
-// GET SHEET DATA (JSON)
-// =============================================================================
-
-/**
- * GET /api/xlsx/sheets/:documentId
- * 
- * Returns sheet data as JSON for custom rendering
- */
-router.get('/sheets/:documentId', (req, res) => {
+router.get('/sheets/:documentId', verifyFirebaseToken, async (req, res) => {
     const { documentId } = req.params;
+    const accessResult = await getAccessibleSpreadsheetDocument(req.user.uid, documentId);
 
-    console.log(`📊 Serving XLSX sheet data: ${documentId}`);
+    if (accessResult.status !== 200) {
+        return res.status(accessResult.status).json({ success: false, error: accessResult.error });
+    }
 
-    const sheetsPath = path.join(CONFIG.PREVIEW_DIR, `${documentId}.json`);
-
+    const { sheetsPath } = getPreviewPaths(documentId);
     if (!fs.existsSync(sheetsPath)) {
-        return res.status(404).json({
-            success: false,
-            error: 'Sheet data not found'
-        });
+        return res.status(404).json({ success: false, error: 'Sheet data not found' });
     }
 
     try {
         const data = JSON.parse(fs.readFileSync(sheetsPath, 'utf-8'));
-        res.json({
-            success: true,
-            ...data
-        });
+        return res.json({ success: true, ...data });
     } catch (error) {
-        res.status(500).json({
-            success: false,
-            error: 'Failed to read sheet data'
-        });
+        return res.status(500).json({ success: false, error: 'Failed to read sheet data' });
     }
 });
 
-// =============================================================================
-// GET SINGLE SHEET
-// =============================================================================
-
-/**
- * GET /api/xlsx/sheet/:documentId/:sheetIndex
- * 
- * Returns data for a specific sheet (for lazy loading)
- */
-router.get('/sheet/:documentId/:sheetIndex', (req, res) => {
+router.get('/sheet/:documentId/:sheetIndex', verifyFirebaseToken, async (req, res) => {
     const { documentId, sheetIndex } = req.params;
     const index = parseInt(sheetIndex, 10);
+    const accessResult = await getAccessibleSpreadsheetDocument(req.user.uid, documentId);
 
-    const sheetsPath = path.join(CONFIG.PREVIEW_DIR, `${documentId}.json`);
+    if (accessResult.status !== 200) {
+        return res.status(accessResult.status).json({ success: false, error: accessResult.error });
+    }
 
+    const { sheetsPath } = getPreviewPaths(documentId);
     if (!fs.existsSync(sheetsPath)) {
-        return res.status(404).json({
-            success: false,
-            error: 'Sheet data not found'
-        });
+        return res.status(404).json({ success: false, error: 'Sheet data not found' });
     }
 
     try {
@@ -109,110 +100,71 @@ router.get('/sheet/:documentId/:sheetIndex', (req, res) => {
         const sheet = data.sheets[index];
 
         if (!sheet) {
-            return res.status(404).json({
-                success: false,
-                error: 'Sheet not found'
-            });
+            return res.status(404).json({ success: false, error: 'Sheet not found' });
         }
 
-        res.json({
-            success: true,
-            sheet
-        });
+        return res.json({ success: true, sheet });
     } catch (error) {
-        res.status(500).json({
-            success: false,
-            error: 'Failed to read sheet data'
-        });
+        return res.status(500).json({ success: false, error: 'Failed to read sheet data' });
     }
 });
 
-// =============================================================================
-// REGENERATE PREVIEW
-// =============================================================================
-
-/**
- * POST /api/xlsx/regenerate/:documentId
- * 
- * Regenerates the preview for a specific document
- */
-router.post('/regenerate/:documentId', async (req, res) => {
+router.post('/regenerate/:documentId', verifyFirebaseToken, async (req, res) => {
     const { documentId } = req.params;
-    const { filePath } = req.body;
+    const accessResult = await getAccessibleSpreadsheetDocument(req.user.uid, documentId);
 
-    if (!filePath) {
-        return res.status(400).json({
-            success: false,
-            error: 'filePath is required'
-        });
+    if (accessResult.status !== 200) {
+        return res.status(accessResult.status).json({ success: false, error: accessResult.error });
+    }
+
+    const { document, access } = accessResult;
+    if (!access.isOwner) {
+        return res.status(403).json({ success: false, error: 'Only the owner can regenerate previews' });
+    }
+
+    if (!document.s3Key && !document.storagePath) {
+        return res.status(400).json({ success: false, error: 'No valid file source found for this spreadsheet' });
     }
 
     try {
-        const result = await parseXlsxFile(filePath, documentId);
-        res.json({
+        const result = await regeneratePreview(document, documentId);
+        return res.json({
             success: true,
             message: 'Preview regenerated',
             ...result
         });
     } catch (error) {
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
+        return res.status(500).json({ success: false, error: error.message });
     }
 });
 
-// =============================================================================
-// CHECK PREVIEW STATUS (with auto-generate option)
-// =============================================================================
-
-/**
- * GET /api/xlsx/status/:documentId
- * GET /api/xlsx/status/:documentId?generate=true
- * 
- * Check if preview exists for a document
- * If generate=true and preview doesn't exist, tries to generate it
- */
-router.get('/status/:documentId', async (req, res) => {
+router.get('/status/:documentId', verifyFirebaseToken, async (req, res) => {
     const { documentId } = req.params;
     const shouldGenerate = req.query.generate === 'true';
+    const accessResult = await getAccessibleSpreadsheetDocument(req.user.uid, documentId);
 
-    const previewPath = path.join(CONFIG.PREVIEW_DIR, `${documentId}.html`);
-    const sheetsPath = path.join(CONFIG.PREVIEW_DIR, `${documentId}.json`);
+    if (accessResult.status !== 200) {
+        return res.status(accessResult.status).json({ success: false, error: accessResult.error });
+    }
 
+    const { document, access } = accessResult;
+    const { previewPath, sheetsPath } = getPreviewPaths(documentId);
     let hasPreview = fs.existsSync(previewPath);
     let hasSheets = fs.existsSync(sheetsPath);
 
-    // If preview doesn't exist and auto-generate is requested
     if (!hasPreview && shouldGenerate) {
+        if (!access.isOwner) {
+            return res.status(403).json({ success: false, error: 'Only the owner can generate previews' });
+        }
+
         try {
-            console.log(`📊 Auto-generating XLSX preview for: ${documentId}`);
-
-            // Import Firestore to look up the document
-            const { getFirestore } = require('../config/firebase.config');
-            const db = getFirestore();
-
-            // Find the document in Firestore
-            const docRef = await db.collection('documents').doc(documentId).get();
-
-            if (docRef.exists) {
-                const docData = docRef.data();
-                const filePath = docData.storagePath;
-
-                if (filePath && fs.existsSync(filePath)) {
-                    // Generate the preview
-                    await parseXlsxFile(filePath, documentId);
-                    hasPreview = fs.existsSync(previewPath);
-                    hasSheets = fs.existsSync(sheetsPath);
-                    console.log(`   ✅ XLSX preview generated successfully`);
-                } else {
-                    console.log(`   ⚠️ File not found at: ${filePath}`);
-                }
-            } else {
-                console.log(`   ⚠️ Document not found in Firestore: ${documentId}`);
+            if (document.s3Key || (document.storagePath && fs.existsSync(document.storagePath))) {
+                await regeneratePreview(document, documentId);
+                hasPreview = fs.existsSync(previewPath);
+                hasSheets = fs.existsSync(sheetsPath);
             }
-        } catch (genError) {
-            console.error(`   ❌ Auto-generate failed: ${genError.message}`);
+        } catch (error) {
+            console.error(`XLSX preview auto-generation failed for ${documentId}:`, error.message);
         }
     }
 
@@ -222,12 +174,14 @@ router.get('/status/:documentId', async (req, res) => {
             const data = JSON.parse(fs.readFileSync(sheetsPath, 'utf-8'));
             metadata = {
                 sheetCount: data.sheets?.length || 0,
-                sheetNames: data.sheets?.map(s => s.name) || []
+                sheetNames: data.sheets?.map((sheet) => sheet.name) || []
             };
-        } catch { }
+        } catch (error) {
+            metadata = null;
+        }
     }
 
-    res.json({
+    return res.json({
         success: true,
         documentId,
         hasPreview,

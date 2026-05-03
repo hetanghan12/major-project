@@ -5,8 +5,8 @@ import { ChartConfiguration, ChartOptions } from 'chart.js';
 import { AdminService } from '../../core/services/admin.service';
 
 @Component({
-  selector: 'app-admin-analytics',
   standalone: true,
+  selector: 'app-admin-analytics',
   imports: [CommonModule, BaseChartDirective],
   template: `
     <div class="h-full w-full flex flex-col" *ngIf="!loading && stats">
@@ -19,9 +19,6 @@ import { AdminService } from '../../core/services/admin.service';
         <div class="flex gap-3">
           <button (click)="loadData()" [disabled]="refreshing" class="bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 px-4 py-2 rounded-lg text-sm shadow-sm transition-colors disabled:opacity-50">
             {{ refreshing ? 'Refreshing...' : 'Refresh' }}
-          </button>
-          <button class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm">
-            Download PDF
           </button>
         </div>
       </div>
@@ -74,55 +71,55 @@ import { AdminService } from '../../core/services/admin.service';
         <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 flex flex-col">
           <h3 class="text-sm font-bold text-gray-900 mb-6">File Type Distribution</h3>
           
-          <div class="flex-1 space-y-6 overflow-y-auto pr-2">
+          <div class="flex-1 min-h-0 overflow-y-auto pr-2 custom-scrollbar space-y-5">
             
-            <div class="flex flex-col" [class.opacity-50]="!stats.typeDistribution?.other?.count">
-              <div class="flex justify-between text-xs font-bold text-gray-700 mb-2">
+            <div class="flex flex-col" [class.opacity-40]="!stats.typeDistribution?.other?.count">
+              <div class="flex justify-between text-xs font-bold text-gray-600 mb-1.5">
                 <span>Other</span>
-                <span>{{ stats.typeDistribution?.other?.count || 0 }} Files</span>
+                <span class="text-indigo-600">{{ stats.typeDistribution?.other?.count || 0 }} Files</span>
               </div>
-              <div class="w-full h-2 bg-gray-50 rounded-full overflow-hidden">
-                <div class="h-full bg-indigo-500 rounded-full transition-all duration-1000" [style.width.%]="getPercentage(stats.typeDistribution?.other?.count, stats.totalDocuments)"></div>
+              <div class="w-full h-1.5 bg-gray-50 rounded-full overflow-hidden">
+                <div class="h-full bg-indigo-500 rounded-full transition-all duration-1000 ease-out shadow-[0_0_8px_rgba(99,102,241,0.3)]" [style.width.%]="getPercentage(stats.typeDistribution?.other?.count, stats.totalDocuments || stats.totalFiles)"></div>
               </div>
             </div>
 
-            <div class="flex flex-col" [class.opacity-50]="!stats.typeDistribution?.documents?.count">
-              <div class="flex justify-between text-xs font-bold text-gray-700 mb-2">
+            <div class="flex flex-col" [class.opacity-40]="!stats.typeDistribution?.documents?.count">
+              <div class="flex justify-between text-xs font-bold text-gray-600 mb-1.5">
                 <span>Documents</span>
-                <span>{{ stats.typeDistribution?.documents?.count || 0 }} Files</span>
+                <span class="text-indigo-600">{{ stats.typeDistribution?.documents?.count || 0 }} Files</span>
               </div>
-              <div class="w-full h-2 bg-gray-50 rounded-full overflow-hidden">
-                <div class="h-full bg-indigo-500 rounded-full transition-all duration-1000" [style.width.%]="getPercentage(stats.typeDistribution?.documents?.count, stats.totalDocuments)"></div>
+              <div class="w-full h-1.5 bg-gray-50 rounded-full overflow-hidden">
+                <div class="h-full bg-indigo-500 rounded-full transition-all duration-1000 ease-out shadow-[0_0_8px_rgba(99,102,241,0.3)]" [style.width.%]="getPercentage(stats.typeDistribution?.documents?.count, stats.totalDocuments || stats.totalFiles)"></div>
               </div>
             </div>
 
-            <div class="flex flex-col" [class.opacity-50]="!stats.typeDistribution?.image?.count">
-              <div class="flex justify-between text-xs font-bold text-gray-700 mb-2">
+            <div class="flex flex-col" [class.opacity-40]="!stats.typeDistribution?.image?.count">
+              <div class="flex justify-between text-xs font-bold text-gray-600 mb-1.5">
                 <span>Images</span>
-                <span>{{ stats.typeDistribution?.image?.count || 0 }} Files</span>
+                <span class="text-indigo-600">{{ stats.typeDistribution?.image?.count || 0 }} Files</span>
               </div>
-              <div class="w-full h-2 bg-gray-50 rounded-full overflow-hidden">
-                <div class="h-full bg-indigo-500 rounded-full transition-all duration-1000" [style.width.%]="getPercentage(stats.typeDistribution?.image?.count, stats.totalDocuments)"></div>
+              <div class="w-full h-1.5 bg-gray-50 rounded-full overflow-hidden">
+                <div class="h-full bg-indigo-500 rounded-full transition-all duration-1000 ease-out shadow-[0_0_8px_rgba(99,102,241,0.3)]" [style.width.%]="getPercentage(stats.typeDistribution?.image?.count, stats.totalDocuments || stats.totalFiles)"></div>
               </div>
             </div>
 
-            <div class="flex flex-col" [class.opacity-50]="!stats.typeDistribution?.video?.count">
-              <div class="flex justify-between text-xs font-bold text-gray-700 mb-2">
+            <div class="flex flex-col" [class.opacity-40]="!stats.typeDistribution?.video?.count">
+              <div class="flex justify-between text-xs font-bold text-gray-600 mb-1.5">
                 <span>Videos</span>
-                <span>{{ stats.typeDistribution?.video?.count || 0 }} Files</span>
+                <span class="text-indigo-600">{{ stats.typeDistribution?.video?.count || 0 }} Files</span>
               </div>
-              <div class="w-full h-2 bg-gray-50 rounded-full overflow-hidden">
-                <div class="h-full bg-indigo-500 rounded-full transition-all duration-1000" [style.width.%]="getPercentage(stats.typeDistribution?.video?.count, stats.totalDocuments)"></div>
+              <div class="w-full h-1.5 bg-gray-50 rounded-full overflow-hidden">
+                <div class="h-full bg-indigo-500 rounded-full transition-all duration-1000 ease-out shadow-[0_0_8px_rgba(99,102,241,0.3)]" [style.width.%]="getPercentage(stats.typeDistribution?.video?.count, stats.totalDocuments || stats.totalFiles)"></div>
               </div>
             </div>
 
-            <div class="flex flex-col" [class.opacity-50]="!stats.typeDistribution?.audio?.count">
-              <div class="flex justify-between text-xs font-bold text-gray-700 mb-2">
+            <div class="flex flex-col" [class.opacity-40]="!stats.typeDistribution?.audio?.count">
+              <div class="flex justify-between text-xs font-bold text-gray-600 mb-1.5">
                 <span>Audio</span>
-                <span>{{ stats.typeDistribution?.audio?.count || 0 }} Files</span>
+                <span class="text-indigo-600">{{ stats.typeDistribution?.audio?.count || 0 }} Files</span>
               </div>
-              <div class="w-full h-2 bg-gray-50 rounded-full overflow-hidden">
-                <div class="h-full bg-indigo-500 rounded-full transition-all duration-1000" [style.width.%]="getPercentage(stats.typeDistribution?.audio?.count, stats.totalDocuments)"></div>
+              <div class="w-full h-1.5 bg-gray-50 rounded-full overflow-hidden">
+                <div class="h-full bg-indigo-500 rounded-full transition-all duration-1000 ease-out shadow-[0_0_8px_rgba(99,102,241,0.3)]" [style.width.%]="getPercentage(stats.typeDistribution?.audio?.count, stats.totalDocuments || stats.totalFiles)"></div>
               </div>
             </div>
 
@@ -171,6 +168,20 @@ import { AdminService } from '../../core/services/admin.service';
     :host {
       display: block;
       height: 100%;
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 4px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: #f1f1f1;
+      border-radius: 10px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #e2e8f0;
+      border-radius: 10px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: #cbd5e1;
     }
   `]
 })
@@ -246,20 +257,23 @@ export class ReportsComponent implements OnInit {
           typeDistribution: unifiedRes.data.typeDistribution,
           activeUsers24h: unifiedRes.data.stats.activeUsers24h || 0
         };
-      }
 
-      if (activityRes.success && activityRes.data?.storageActivity) {
-        const chartData = activityRes.data.storageActivity;
+        // If activityRes failed or is empty, try to use data from unifiedRes
+        const activityData = (activityRes.success && activityRes.data?.storageActivity) 
+          ? activityRes.data.storageActivity 
+          : unifiedRes.data.storageActivity;
 
-        // Update Chart Data with fresh values
-        this.lineChartData = {
-          labels: chartData.map((d: any) => d.day),
-          datasets: [{
-            ...this.lineChartData.datasets[0],
-            data: chartData.map((d: any) => Number((d.bytes / (1024 * 1024)).toFixed(2)))
-          }]
-        };
-        this.isChartReady = true;
+        if (activityData && activityData.length > 0) {
+          // Update Chart Data with fresh values
+          this.lineChartData = {
+            labels: activityData.map((d: any) => d.label || d.day),
+            datasets: [{
+              ...this.lineChartData.datasets[0],
+              data: activityData.map((d: any) => Number(d.value || (d.bytes / (1024 * 1024))).toFixed(2))
+            }]
+          };
+          this.isChartReady = true;
+        }
       }
     } catch (e) {
       console.error('Failed to load analytics data', e);

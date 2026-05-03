@@ -28,6 +28,10 @@ router.get('/subscriptions', adminController.getSubscriptions);
 router.put('/subscriptions/:planId', adminController.updateSubscription);
 router.get('/ai-usage/metrics', adminController.getAiUsageMetrics);
 
+// 5. Admin Notifications
+router.get('/notifications', adminController.getNotifications);
+router.post('/notifications/read', adminController.markNotificationsRead);
+
 // 5. One-time seeding of dashboard_stats from existing data
 router.post('/seed-stats', async (req, res) => {
     try {

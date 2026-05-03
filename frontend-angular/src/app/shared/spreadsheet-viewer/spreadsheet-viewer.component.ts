@@ -15,6 +15,7 @@
 
 import { Component, Input, Output, EventEmitter, OnInit, OnChanges, SimpleChanges, HostListener, OnDestroy, ChangeDetectorRef, NgZone, ElementRef, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { HttpClient } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { environment } from '../../../environments/environment';
@@ -41,8 +42,8 @@ interface ColumnWidth {
 }
 
 @Component({
-    selector: 'app-spreadsheet-viewer',
     standalone: true,
+    selector: 'app-spreadsheet-viewer',
     imports: [CommonModule, FormsModule],
     template: `
         <div class="spreadsheet-viewer" *ngIf="file">
@@ -989,7 +990,8 @@ export class SpreadsheetViewerComponent implements OnInit, OnChanges, OnDestroy 
         private sanitizer: DomSanitizer,
         private cdr: ChangeDetectorRef,
         private ngZone: NgZone,
-        private authService: AuthService
+        private authService: AuthService,
+        private http: HttpClient
     ) { }
 
     // Prevent multiple simultaneous loadPreview calls
@@ -1329,40 +1331,20 @@ export class SpreadsheetViewerComponent implements OnInit, OnChanges, OnDestroy 
         this.previewUrl = null;
 
         try {
-            console.log('[SpreadsheetViewer] Loading file for client-side parsing:', this.file.fileName);
+            console.log('[SpreadsheetViewer] Loading file content:', this.file.fileName);
 
             const docId = this.file.documentId;
-            const token = await this.authService.getToken();
-
-            // 1. Fetch document metadata first to get fresh signed URL (like PDF/Image)
             let downloadUrl = `${this.apiUrl}/secure/documents/${docId}/view`;
-            let fetchHeaders: any = { 'Authorization': `Bearer ${token}` };
 
-            try {
-                const metaResponse = await fetch(`${this.apiUrl}/secure/documents/${docId}`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
+            // Use HttpClient to benefit from interceptors (Auth + Ngrok Skip Warning)
+            // We fetch as arraybuffer for XLSX library compatibility
+            const arrayBuffer = await this.http.get(downloadUrl, { 
+                responseType: 'arraybuffer' 
+            }).toPromise();
 
-                if (metaResponse.ok) {
-                    const metaData = await metaResponse.json();
-                    if (metaData.success && metaData.document?.signedUrl) {
-                        console.log('[SpreadsheetViewer] Using direct S3 signed URL');
-                        downloadUrl = metaData.document.signedUrl;
-                        fetchHeaders = {}; // No auth headers for S3
-                    }
-                }
-            } catch (e) {
-                console.warn('[SpreadsheetViewer] Failed to fetch metadata, falling back to proxy');
+            if (!arrayBuffer) {
+                throw new Error('Failed to load file content');
             }
-
-            // 2. Fetch File Content as ArrayBuffer
-            const response = await fetch(downloadUrl, { headers: fetchHeaders });
-
-            if (!response.ok) {
-                throw new Error(`Failed to load file: ${response.status} ${response.statusText}`);
-            }
-
-            const arrayBuffer = await response.arrayBuffer();
 
             // 3. Parse with XLSX
             this.parseExcelData(arrayBuffer);

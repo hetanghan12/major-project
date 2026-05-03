@@ -69,7 +69,7 @@ exports.getDashboardStats = async (req, res) => {
             };
 
             try {
-                const docsSnap = await db.collection('documents').get();
+                const docsSnap = await db.collection('files').get();
                 docsSnap.forEach(doc => {
                     const data = doc.data();
                     if (data.isFolder) return;

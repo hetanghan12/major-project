@@ -1,4 +1,5 @@
 const { getFirestore } = require('../config/firebase.config');
+const { checkMfaPermission } = require('../services/storage-quota.service');
 const speakeasy = require('speakeasy');
 const qrcode = require('qrcode');
 
@@ -36,7 +37,13 @@ exports.getMfaStatus = async (req, res) => {
  */
 exports.startSetup = async (req, res) => {
     try {
-        const { email } = req.user;
+        const { uid, email } = req.user;
+
+        // Plan-based MFA validation
+        const mfaCheck = await checkMfaPermission(uid);
+        if (!mfaCheck.allowed) {
+            return res.status(403).json({ success: false, message: mfaCheck.message });
+        }
         const secret = speakeasy.generateSecret({
             name: `CloudAI Document Vault (${email})`
         });
@@ -60,6 +67,12 @@ exports.startSetup = async (req, res) => {
 exports.verifySetup = async (req, res) => {
     try {
         const { uid } = req.user;
+
+        // Plan-based MFA validation (Double check)
+        const mfaCheck = await checkMfaPermission(uid);
+        if (!mfaCheck.allowed) {
+            return res.status(403).json({ success: false, message: mfaCheck.message });
+        }
         const { secret, token } = req.body;
 
         if (!secret || !token) {

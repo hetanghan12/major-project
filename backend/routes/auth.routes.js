@@ -54,6 +54,6 @@ router.post('/fail', failLogin);
  * @desc    Return lock status for a given email
  * @access  Public
  */
-router.get('/lockout-status/:email', getLockoutStatus);
+router.get('/lockout-status/:email', verifyFirebaseToken, getLockoutStatus);
 
 module.exports = router;

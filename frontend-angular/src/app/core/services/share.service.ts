@@ -20,7 +20,7 @@ import { environment } from '../../../environments/environment';
 // Share interfaces
 export interface ShareRecipient {
     email: string;
-    permission: 'view' | 'edit' | 'download';
+    permission: 'view' | 'download';
 }
 
 export interface Share {
@@ -30,7 +30,7 @@ export interface Share {
     ownerUserId: string;
     recipientEmail: string;
     recipientUserId: string | null;
-    permission: 'view' | 'edit' | 'download';
+    permission: 'view' | 'download';
     status: 'pending' | 'active' | 'revoked';
     message: string | null;
     sharedAt: string;
@@ -62,7 +62,7 @@ export interface SharedByMeGroup {
 export interface SharedByMeRecipient {
     shareId: string;
     recipientEmail: string;
-    permission: 'view' | 'edit' | 'download';
+    permission: 'view' | 'download';
     status: 'pending' | 'active' | 'revoked';
     sharedAt: string;
     revokedAt: string | null;
@@ -179,7 +179,7 @@ export class ShareService {
     /**
      * Update permission on a share
      */
-    updatePermission(shareId: string, permission: 'view' | 'edit' | 'download'): Observable<any> {
+    updatePermission(shareId: string, permission: 'view' | 'download'): Observable<any> {
         return this.http.patch(`${this.apiUrl}/${shareId}/permission`, { permission }).pipe(
             tap(() => {
                 console.log('[ShareService] Permission updated:', shareId, permission);

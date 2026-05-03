@@ -23,11 +23,20 @@ export const authInterceptor: HttpInterceptorFn = (
 
     return from(authService.getToken()).pipe(
         switchMap(token => {
+            const isNgrokRequest = req.url.includes('.ngrok-free.dev');
+            const headers: Record<string, string> = {};
+
             if (token) {
+                headers['Authorization'] = `Bearer ${token}`;
+            }
+
+            if (isNgrokRequest) {
+                headers['ngrok-skip-browser-warning'] = 'true';
+            }
+
+            if (Object.keys(headers).length > 0) {
                 const authReq = req.clone({
-                    setHeaders: {
-                        Authorization: `Bearer ${token}`
-                    }
+                    setHeaders: headers
                 });
                 return next(authReq);
             }

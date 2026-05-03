@@ -3,13 +3,14 @@
  * ===========
  * Defines routes for AI assistant queries.
  * 
+ *
  * @author College Project
  */
 
 const express = require('express');
 const router = express.Router();
 
-const { queryAI, getChatHistory, healthCheck } = require('../controllers/ai.controller');
+const { queryAI, getChatHistory, getChatMessage, deleteChat, healthCheck } = require('../controllers/ai.controller');
 const { verifyFirebaseToken } = require('../middlewares/auth.middleware');
 
 /**
@@ -50,5 +51,19 @@ router.post('/query', queryAI);
  * @access  Protected
  */
 router.get('/history', getChatHistory);
+
+/**
+ * @route   GET /api/ai/history/:chatId
+ * @desc    Get messages from a specific chat
+ * @access  Protected
+ */
+router.get('/history/:chatId', getChatMessage);
+
+/**
+ * @route   DELETE /api/ai/history/:chatId
+ * @desc    Delete a specific chat
+ * @access  Protected
+ */
+router.delete('/history/:chatId', deleteChat);
 
 module.exports = router;

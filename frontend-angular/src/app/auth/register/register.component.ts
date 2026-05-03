@@ -17,8 +17,8 @@ import { Router, RouterLink } from '@angular/router';
 import { AuthService } from '../../core/services/auth.service';
 
 @Component({
-  selector: 'app-register',
   standalone: true,
+  selector: 'app-register',
   imports: [CommonModule, FormsModule, RouterLink],
   styleUrls: ['./register.component.css'],
   template: `

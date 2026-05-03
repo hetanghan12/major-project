@@ -22,14 +22,17 @@ export const adminGuard = async () => {
         }));
 
         const role = res.user?.role?.toLowerCase();
-        if (res.user && (role === 'admin' || res.user.email === 'admin@cloudspace.com')) {
+        const email = res.user?.email || '';
+
+        if (res.user && (role === 'admin' || email === 'admin@cloudspace.com' || email === 'admin@admin.com')) {
             return true;
         } else {
+            console.warn(`🚫 Non-admin access attempt to admin route by ${email}. Redirecting to user dashboard.`);
             router.navigate(['/dashboard']);
             return false;
         }
     } catch (err) {
-        console.error('Admin Guard Check Failed:', err);
+        console.error('❌ Admin Guard Check Failed:', err);
         router.navigate(['/dashboard']);
         return false;
     }

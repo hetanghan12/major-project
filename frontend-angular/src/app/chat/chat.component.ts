@@ -7,11 +7,12 @@
  * @author CloudAI Team
  */
 
-import { Component, OnInit, ViewChild, ElementRef, signal, effect, ViewEncapsulation } from '@angular/core';
+import { Component, OnInit, ViewChild, ElementRef, signal, effect, ViewEncapsulation, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
-import { ChatService, ChatMessage } from '../core/services/chat.service';
+import { ChatService, ChatMessage, ChatHistoryItem } from '../core/services/chat.service';
+import { AuthService } from '../core/services/auth.service';
 import { DocumentService } from '../core/services/document.service';
 import { marked } from 'marked';
 
@@ -23,39 +24,79 @@ interface ChatSession {
 }
 
 @Component({
-  selector: 'app-chat',
   standalone: true,
+  selector: 'app-chat',
   imports: [CommonModule, FormsModule, RouterLink],
   template: `
     <div class="chat-container animate-in">
       <div class="chat-wrapper">
         <!-- Chat Sidebar -->
-        <aside class="chat-sidebar-panel">
+        <aside *ngIf="isPremium()" class="chat-sidebar-panel">
+          <div class="px-4 pt-6 pb-2">
+            <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Conversation History</h3>
+          </div>
+
           <!-- New Chat Button -->
-          <div class="p-4">
-            <button (click)="startNewChat()" class="btn-primary w-full">
+          <div class="px-3 py-4">
+            <button (click)="startNewChat()" class="btn-primary w-full shadow-sm flex items-center justify-center gap-2 py-3 rounded-xl transition-all hover:scale-[1.02]">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
               </svg>
-              New Chat
+              <span>New Chat</span>
             </button>
           </div>
 
-          <!-- Recent Chats -->
-          <div class="flex-1 overflow-y-auto px-3">
-            <div 
-              *ngFor="let session of chatSessions()"
-              (click)="selectChat(session.id)"
-              class="chat-history-item mb-1"
-              [class.active]="selectedChatId() === session.id">
-              <p class="chat-history-title">{{ session.title }}</p>
-              <p class="chat-history-meta">{{ session.date }}</p>
+          <!-- History Groups -->
+          <div class="flex-1 overflow-y-auto px-2 custom-scrollbar">
+            <!-- Grouped History -->
+            <div *ngFor="let group of historyGroups()" class="mb-6">
+              <h3 class="px-4 mb-2 text-xs font-semibold text-slate-400 uppercase tracking-widest">{{ group.label }}</h3>
+              
+              <div 
+                *ngFor="let session of group.chats"
+                (click)="selectChat(session.id)"
+                class="chat-history-item group relative"
+                [class.active]="chatService.activeChatId() === session.id">
+                <div class="flex-1 min-w-0 pr-6">
+                  <p class="chat-history-title truncate text-sm">{{ session.title }}</p>
+                </div>
+                
+                <button 
+                  (click)="deleteChat($event, session.id)"
+                  class="delete-chat-btn"
+                  title="Delete Chat">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                  </svg>
+                </button>
+              </div>
             </div>
 
-            <div *ngIf="chatSessions().length === 0" class="px-4 py-8 text-center">
-              <p class="text-sm" style="color: var(--text-muted);">No chat history yet</p>
+            <div *ngIf="chatService.chatHistory().length === 0" class="px-6 py-12 text-center">
+              <div class="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-3">
+                <svg class="w-6 h-6 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+                </svg>
+              </div>
+              <p class="text-sm text-slate-400">No conversations yet</p>
             </div>
           </div>
+        </aside>
+
+        <!-- Sidebar for Free Users (Locked) -->
+        <aside *ngIf="!isPremium()" class="chat-sidebar-panel locked-sidebar italic">
+            <div class="p-6 text-center h-full flex flex-col justify-center">
+                <div class="premium-lock-icon mb-4">
+                    <svg class="w-10 h-10 text-amber-500 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                    </svg>
+                </div>
+                <h3 class="text-slate-900 font-semibold mb-2">Unlock History</h3>
+                <p class="text-xs text-slate-500 leading-relaxed mb-6">
+                    Chat history is available only for <strong>Pro</strong> and <strong>Professional</strong> plans.
+                </p>
+                <a routerLink="/pricing" class="btn-primary-outline text-xs">Upgrade Plan</a>
+            </div>
         </aside>
 
         <!-- Main Chat Area -->
@@ -77,7 +118,7 @@ interface ChatSession {
                 </svg>
               </div>
               <div>
-                <h2 class="font-semibold text-slate-900">Smart AI Assistant</h2>
+                <h2 class="font-semibold" style="color: var(--text-primary)">Smart AI Assistant</h2>
                 <div class="flex items-center gap-2 text-sm text-emerald-500 font-medium">
                   <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
                   Ready
@@ -221,42 +262,39 @@ interface ChatSession {
           </div>
 
           <!-- Quick Actions -->
-          <div class="chat-actions-panel">
-            <button class="chat-action-btn" (click)="sendQuickAction('scan')">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/>
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/>
-              </svg>
-              Scan
-            </button>
-            <button class="chat-action-btn" (click)="sendQuickAction('search')">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
-              </svg>
-              Search
-            </button>
-            <button class="chat-action-btn" (click)="sendQuickAction('content')">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h7"/>
-              </svg>
-              My Content
-            </button>
-            <button class="chat-action-btn" (click)="sendQuickAction('summary')">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-              </svg>
-              Summary
-            </button>
-            <button class="chat-action-btn" (click)="sendQuickAction('export')">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
-              </svg>
-              Export
-            </button>
-          </div>
-
-          <!-- Input Area -->
+          <!-- Document Selection & Input Area -->
           <div class="chat-input-panel">
+            <!-- Document Quick Selector -->
+            <div class="mb-3 flex items-center gap-2">
+              <span class="text-xs font-semibold uppercase tracking-wider" style="color: var(--text-secondary)">Reference Document:</span>
+              <div class="relative flex-1 group">
+                <select 
+                  [(ngModel)]="selectedDocumentId"
+                  class="chat-select"
+                >
+                  <option value="">All Documents (General Query)</option>
+                  <option *ngFor="let doc of userDocuments()" [value]="doc.documentId">
+                     {{ doc.fileName }}
+                  </option>
+                </select>
+                <div class="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+                  </svg>
+                </div>
+              </div>
+              <button 
+                *ngIf="selectedDocumentId" 
+                (click)="selectedDocumentId = ''"
+                class="p-1 text-slate-400 hover:text-red-500 transition-colors"
+                title="Clear selection"
+              >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+              </button>
+            </div>
+
             <form (ngSubmit)="sendMessage()" class="flex gap-3">
               <div class="flex-1 relative">
                 <input
@@ -290,7 +328,7 @@ interface ChatSession {
       display: block;
       height: calc(100vh - 64px);
       margin: -24px;
-      color: #0f172a;
+      color: var(--text-primary);
     }
     
     .chat-container {
@@ -300,22 +338,24 @@ interface ChatSession {
     .chat-wrapper {
       display: flex;
       height: 100%;
-      background-color: #f8fafc;
+      background-color: var(--bg-main);
     }
     
     .chat-sidebar-panel {
-      width: 260px;
+      width: 280px;
+      min-width: 280px;
       display: flex;
       flex-direction: column;
-      background: #ffffff;
-      border-right: 1px solid #e2e8f0;
+      background: var(--bg-card);
+      border-right: 1px solid var(--border-color);
+      z-index: 10;
     }
     
     .chat-main-panel {
       flex: 1;
       display: flex;
       flex-direction: column;
-      background: #f8fafc;
+      background: var(--bg-main);
     }
     
     .chat-header-panel {
@@ -323,8 +363,8 @@ interface ChatSession {
       align-items: center;
       justify-content: space-between;
       padding: 16px 24px;
-      background: #ffffff;
-      border-bottom: 1px solid #e2e8f0;
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border-color);
     }
     
     .chat-header-avatar {
@@ -340,13 +380,13 @@ interface ChatSession {
     .chat-header-btn {
       padding: 8px;
       border-radius: 8px;
-      color: #64748b;
+      color: var(--text-muted);
       transition: all 0.2s;
     }
     
     .chat-header-btn:hover {
-      background: #f1f5f9;
-      color: #0f172a;
+      background: var(--bg-elevated);
+      color: var(--text-primary);
     }
     
     .chat-messages-panel {
@@ -356,12 +396,12 @@ interface ChatSession {
     }
     
     .chat-welcome-message {
-      background: #ffffff;
-      border: 1px solid #e2e8f0;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
       border-radius: 16px;
       padding: 24px;
-      color: #0f172a;
-      box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+      color: var(--text-primary);
+      box-shadow: var(--shadow-sm);
     }
     
     .chat-message-user {
@@ -370,7 +410,7 @@ interface ChatSession {
       padding: 12px 16px;
       border-radius: 16px 16px 4px 16px;
       max-width: 80%;
-      box-shadow: 0 4px 6px -1px rgb(99 102 241 / 0.2);
+      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.2);
     }
     
     .chat-ai-avatar {
@@ -385,13 +425,13 @@ interface ChatSession {
     }
     
     .chat-message-ai {
-      background: #ffffff;
-      color: #0f172a;
+      background: var(--bg-card);
+      color: var(--text-primary);
       padding: 12px 16px;
       border-radius: 16px 16px 16px 4px;
       max-width: 100%;
-      border: 1px solid #e2e8f0;
-      box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+      border: 1px solid var(--border-color);
+      box-shadow: var(--shadow-sm);
     }
     
     .chat-actions-panel {
@@ -409,44 +449,74 @@ interface ChatSession {
       border-radius: 9999px;
       font-size: 14px;
       font-weight: 500;
-      background: #ffffff;
-      border: 1px solid #e2e8f0;
-      color: #475569;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      color: var(--text-secondary);
       transition: all 0.2s;
     }
     
     .chat-action-btn:hover {
-      background: #f8fafc;
-      color: #0f172a;
-      border-color: #cbd5e1;
+      background: var(--bg-elevated);
+      color: var(--text-primary);
     }
     
     .chat-input-panel {
       padding: 16px 24px;
-      background: #ffffff;
-      border-top: 1px solid #e2e8f0;
+      background: var(--bg-card);
+      border-top: 1px solid var(--border-color);
     }
     
     .chat-input {
       width: 100%;
       padding: 14px 16px;
-      background: #f8fafc;
-      border: 1px solid #e2e8f0;
+      background: var(--bg-main);
+      border: 1px solid var(--border-color);
       border-radius: 12px;
-      color: #0f172a;
+      color: var(--text-primary);
       font-size: 14px;
       transition: all 0.2s;
     }
     
     .chat-input::placeholder {
-      color: #94a3b8;
+      color: var(--text-muted);
     }
     
     .chat-input:focus {
       outline: none;
-      border-color: #6366f1;
-      background: #ffffff;
-      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+      border-color: var(--primary);
+      background: var(--bg-card);
+      box-shadow: 0 0 0 3px var(--primary-light);
+    }
+
+    .chat-select {
+      width: 100%;
+      padding: 8px 12px 8px 34px;
+      font-size: 13px;
+      background: var(--bg-main);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      color: var(--text-primary);
+      appearance: none;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-weight: 500;
+    }
+
+    .chat-select:hover {
+      background: var(--bg-elevated);
+      border-color: var(--text-muted);
+    }
+
+    .chat-select:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 2px var(--primary-light);
+    }
+
+    /* Option styling for some browsers */
+    .chat-select option {
+      background: var(--bg-card);
+      color: var(--text-primary);
     }
     
     .chat-send-btn {
@@ -471,34 +541,80 @@ interface ChatSession {
     }
     
     .chat-history-item {
-      padding: 12px 16px;
-      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 14px;
+      border-radius: 10px;
       cursor: pointer;
-      transition: all 0.2s;
-      color: #334155;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      color: var(--text-secondary);
+      margin: 2px 0;
     }
     
     .chat-history-item:hover {
-      background: #f1f5f9;
+      background: var(--bg-elevated);
+      color: var(--text-primary);
     }
     
     .chat-history-item.active {
-      background: #e0e7ff;
-      color: #4338ca;
+      background: var(--primary-light);
+      color: var(--primary);
+      box-shadow: inset 0 0 0 1px var(--primary);
     }
     
     .chat-history-title {
       font-weight: 500;
-      font-size: 14px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      font-size: 13.5px;
+    }
+
+    .delete-chat-btn {
+      position: absolute;
+      right: 10px;
+      opacity: 0;
+      padding: 6px;
+      border-radius: 6px;
+      color: var(--text-muted);
+      transition: all 0.2s;
+      background: transparent;
+    }
+
+    .chat-history-item:hover .delete-chat-btn {
+      opacity: 1;
+    }
+
+    .delete-chat-btn:hover {
+      color: #ef4444;
+      background: rgba(239, 68, 68, 0.1);
     }
     
-    .chat-history-meta {
-      font-size: 12px;
-      color: #64748b;
-      margin-top: 2px;
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 4px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: var(--border-color);
+      border-radius: 10px;
+    }
+    
+    .locked-sidebar {
+        background: var(--bg-main);
+        opacity: 0.8;
+    }
+
+    .btn-primary-outline {
+        padding: 8px 16px;
+        border-radius: 8px;
+        border: 1px solid var(--primary);
+        color: var(--primary);
+        font-weight: 500;
+        transition: all 0.2s;
+    }
+    .btn-primary-outline:hover {
+        background: var(--primary);
+        color: white;
     }
   `]
 })
@@ -509,27 +625,69 @@ export class ChatComponent implements OnInit {
   userMessage = '';
   documentCount = 0;
   savedItemsCount = signal(0);
-  chatSessions = signal<ChatSession[]>([
-    { id: '1', title: 'Conversation 30/12/2025', date: 'Yesterday', messageCount: 8 },
-  ]);
-  selectedChatId = signal<string | null>('1');
+  selectedDocumentId = '';
+
+  // Get actual documents for selector (filtering out directories)
+  userDocuments = computed(() => {
+    return this.documentService.documents().filter(doc => !doc.isFolder);
+  });
+
+  // Use centralized logic from AuthService
+  isPremium = computed(() => this.authService.isPremium());
+
+  // Computed property for grouped history (Today, Yesterday, etc.)
+  historyGroups = computed(() => {
+    const history = this.chatService.chatHistory();
+    const groups: { label: string, chats: ChatHistoryItem[] }[] = [];
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    const last7Days = new Date(today);
+    last7Days.setDate(last7Days.getDate() - 7);
+
+    const todayChats = history.filter(c => new Date(c.updatedAt) >= today);
+    const yesterdayChats = history.filter(c => {
+      const d = new Date(c.updatedAt);
+      return d >= yesterday && d < today;
+    });
+    const olderChats = history.filter(c => new Date(c.updatedAt) < yesterday);
+
+    if (todayChats.length > 0) groups.push({ label: 'Today', chats: todayChats });
+    if (yesterdayChats.length > 0) groups.push({ label: 'Yesterday', chats: yesterdayChats });
+    if (olderChats.length > 0) groups.push({ label: 'Previous Days', chats: olderChats });
+
+    return groups;
+  });
+
   private parsedMessageCache = new Map<string, string>();
 
   constructor(
     public chatService: ChatService,
-    private documentService: DocumentService
+    private documentService: DocumentService,
+    private authService: AuthService
   ) {
+    // Use an effect to trigger actions when premium status changes
+    effect(() => {
+      const isPrem = this.isPremium();
+      if (isPrem) {
+        console.log('[Chat] Premium status confirmed, loading history...');
+        this.chatService.loadChatHistory();
+      }
+    });
+
     // CRITICAL FIX: Auto-sync document count when documents change
     // This ensures AI Assistant knows about newly uploaded documents
     effect(() => {
       const docs = this.documentService.documents();
       this.documentCount = docs.length;
+      this.savedItemsCount.set(docs.length);
       console.log('[Chat] Documents available for AI:', docs.length);
     });
-  }
 
-  ngOnInit(): void {
-    this.loadDocumentCount();
     // Use an effect to cleanly listen for message array size changes and trigger a single forced scroll
     effect(() => {
       const msgs = this.chatService.messages();
@@ -538,6 +696,10 @@ export class ChatComponent implements OnInit {
         setTimeout(() => this.scrollToBottom(), 50);
       }
     });
+  }
+
+  ngOnInit(): void {
+    this.loadDocumentCount();
   }
 
   async loadDocumentCount(): Promise<void> {
@@ -551,17 +713,33 @@ export class ChatComponent implements OnInit {
 
   startNewChat(): void {
     this.chatService.clearChat();
-    const newId = Date.now().toString();
-    const currentHistory = this.chatSessions();
-    this.chatSessions.set([
-      { id: newId, title: 'New Conversation', date: 'Just now', messageCount: 0 },
-      ...currentHistory
-    ]);
-    this.selectedChatId.set(newId);
   }
 
   selectChat(chatId: string): void {
-    this.selectedChatId.set(chatId);
+    if (this.chatService.activeChatId() === chatId) return;
+    this.chatService.loadChatMessages(chatId);
+  }
+
+  async deleteChat(event: Event, chatId: string): Promise<void> {
+    event.stopPropagation(); // Prevent chat selection when clicking delete
+
+    if (confirm('Are you sure you want to delete this conversation? This will permanently remove all messages.')) {
+      await this.chatService.deleteChat(chatId);
+    }
+  }
+
+  formatDate(dateStr: string): string {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diff = now.getTime() - date.getTime();
+
+    if (diff < 86400000 && now.getDate() === date.getDate()) {
+      return 'Today';
+    } else if (diff < 172800000) {
+      return 'Yesterday';
+    } else {
+      return date.toLocaleDateString();
+    }
   }
 
   sendQuickAction(action: string): void {
@@ -591,9 +769,16 @@ export class ChatComponent implements OnInit {
     const question = this.userMessage.trim();
     if (!question) return;
 
+    // Get selected file if any
+    let selectedFile = null;
+    if (this.selectedDocumentId) {
+      selectedFile = this.userDocuments().find(d => d.documentId === this.selectedDocumentId);
+    }
+
     this.userMessage = '';
 
-    await this.chatService.sendMessage(question);
+    // If a specific file is selected, mention it in the UI search indicator or context
+    await this.chatService.sendMessage(question, selectedFile?.fileName, selectedFile?.documentId);
   }
 
   onEnterPress(event: Event): void {

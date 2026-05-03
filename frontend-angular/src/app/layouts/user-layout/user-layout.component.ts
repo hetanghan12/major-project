@@ -5,11 +5,12 @@ import { AuthService } from '../../core/services/auth.service';
 import { DocumentService } from '../../core/services/document.service';
 import { StorageService } from '../../core/services/storage.service';
 import { DashboardService } from '../../core/services/dashboard.service';
+import { NotificationService, Notification } from '../../core/services/notification.service';
 import { FormsModule } from '@angular/forms';
 
 @Component({
-  selector: 'app-user-layout',
   standalone: true,
+  selector: 'app-user-layout',
   imports: [CommonModule, RouterOutlet, RouterLink, RouterLinkActive, FormsModule],
   template: `
     <!-- Main app with sidebar -->
@@ -52,31 +53,35 @@ import { FormsModule } from '@angular/forms';
              [routerLinkActiveOptions]="{exact: true}"
              class="sidebar-nav-item dashboard-item"
              (click)="mobileOpen.set(false)">
-            <div class="sidebar-nav-icon-container bg-white/20">
-               <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div class="sidebar-nav-icon-container">
+               <svg class="sidebar-nav-icon text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
                </svg>
             </div>
-            <span>Dashboard</span>
+            <span class="sidebar-nav-label">Dashboard</span>
           </a>
           
           <a routerLink="/documents" 
              [class.active]="currentRoute.includes('/documents') && !currentRoute.includes('filter=')"
              class="sidebar-nav-item"
              (click)="mobileOpen.set(false)">
-            <svg class="sidebar-nav-icon text-yellow-500" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
-            </svg>
-            <span>My Files</span>
+            <div class="sidebar-nav-icon-container">
+              <svg class="sidebar-nav-icon text-yellow-500" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+              </svg>
+            </div>
+            <span class="sidebar-nav-label">My Files</span>
           </a>
 
           <a (click)="navigateToStarred(); mobileOpen.set(false)" 
              class="sidebar-nav-item cursor-pointer"
              [class.active]="currentRoute.includes('filter=starred')">
-            <svg class="sidebar-nav-icon text-yellow-400" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/>
-            </svg>
-            <span>Starred</span>
+            <div class="sidebar-nav-icon-container">
+              <svg class="sidebar-nav-icon text-yellow-400" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/>
+              </svg>
+            </div>
+            <span class="sidebar-nav-label">Starred</span>
           </a>
 
           <a routerLink="/documents" 
@@ -84,12 +89,14 @@ import { FormsModule } from '@angular/forms';
              class="sidebar-nav-item cursor-pointer"
              [class.active]="currentRoute.includes('filter=shared-with-me')"
              (click)="mobileOpen.set(false)">
-            <div class="sidebar-nav-icon text-orange-400">
-               <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                 <path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-3a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v3h-3zM4.75 12.094A5.973 5.973 0 004 15v3H1v-3a3 3 0 013.75-2.906z"/>
-               </svg>
+            <div class="sidebar-nav-icon-container">
+               <div class="sidebar-nav-icon bg-orange-400 rounded-md p-1">
+                  <svg class="w-full h-full text-white" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-3a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v3h-3zM4.75 12.094A5.973 5.973 0 004 15v3H1v-3a3 3 0 013.75-2.906z"/>
+                  </svg>
+               </div>
             </div>
-            <span>Shared With Me</span>
+            <span class="sidebar-nav-label">Shared With Me</span>
           </a>
 
           <a routerLink="/documents"
@@ -97,21 +104,23 @@ import { FormsModule } from '@angular/forms';
              class="sidebar-nav-item cursor-pointer"
              [class.active]="currentRoute.includes('filter=shared-by-me')"
              (click)="mobileOpen.set(false)">
-            <div class="sidebar-nav-icon text-blue-400">
-                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+            <div class="sidebar-nav-icon-container">
+                <svg class="sidebar-nav-icon text-blue-400" fill="currentColor" viewBox="0 0 20 20">
                     <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM6.293 6.707a1 1 0 010-1.414l3-3a1 1 0 011.414 0l3 3a1 1 0 01-1.414 1.414L11 5.414V13a1 1 0 11-2 0V5.414L7.707 6.707a1 1 0 01-1.414 0z" clip-rule="evenodd"/>
                 </svg>
             </div>
-            <span>Shared By Me</span>
+            <span class="sidebar-nav-label">Shared By Me</span>
           </a>
 
           <a (click)="navigateToTrash(); mobileOpen.set(false)" 
              class="sidebar-nav-item cursor-pointer"
              [class.active]="currentRoute.includes('filter=trash')">
-             <svg class="sidebar-nav-icon text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-             </svg>
-            <span>Trash</span>
+            <div class="sidebar-nav-icon-container">
+               <svg class="sidebar-nav-icon text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+               </svg>
+            </div>
+            <span class="sidebar-nav-label">Trash</span>
           </a>
           
           <div class="my-4 border-t border-gray-100 opacity-20"></div>
@@ -120,12 +129,14 @@ import { FormsModule } from '@angular/forms';
              routerLinkActive="active" 
              class="sidebar-nav-item"
              (click)="mobileOpen.set(false)">
-             <div class="sidebar-nav-icon ai-icon-gradient">
-                 <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
-                 </svg>
+             <div class="sidebar-nav-icon-container">
+                <div class="sidebar-nav-icon ai-icon-gradient p-1 rounded-md">
+                    <svg class="w-full h-full text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+                    </svg>
+                </div>
              </div>
-            <span>AI Assistant</span>
+            <span class="sidebar-nav-label">AI Assistant</span>
           </a>
 
           <a routerLink="/storage-insights"
@@ -153,10 +164,12 @@ import { FormsModule } from '@angular/forms';
              routerLinkActive="active"
              class="sidebar-nav-item" 
              (click)="mobileOpen.set(false)">
-             <svg class="sidebar-nav-icon text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/>
-             </svg>
-            <span>Plans</span>
+            <div class="sidebar-nav-icon-container">
+               <svg class="sidebar-nav-icon text-teal-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/>
+               </svg>
+            </div>
+            <span class="sidebar-nav-label">Plans</span>
           </a>
 
         </nav>
@@ -165,7 +178,7 @@ import { FormsModule } from '@angular/forms';
         <div class="sidebar-footer">
           
           <!-- CloudSpace Pro Card -->
-          <div class="pro-card">
+          <div class="pro-card" *ngIf="!authService.isPremium()">
               <div class="pro-sparkle">
                   <svg class="w-6 h-6 text-yellow-300" fill="currentColor" viewBox="0 0 20 20">
                       <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
@@ -176,28 +189,33 @@ import { FormsModule } from '@angular/forms';
           </div>
 
           <!-- Storage Indicator -->
-          <div class="storage-indicator-minimal">
+          <div class="storage-indicator-minimal" *ngIf="!sidebarCollapsed()">
             <div class="flex justify-between items-center mb-2">
-                <span class="text-sm font-semibold" style="color: var(--text-secondary)">Storage Used</span>
-                <span class="text-sm font-bold" style="color: var(--text-primary)">{{ storagePercent() }}%</span>
+                <span class="text-sm font-semibold text-[var(--text-secondary)]">Storage Used</span>
+                <span class="text-sm font-bold text-[var(--text-primary)]">{{ storagePercent() }}%</span>
             </div>
-            <div class="storage-bar h-2 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden mb-2">
+            <div class="storage-bar h-2 bg-[var(--bg-main)] rounded-full overflow-hidden mb-2">
               <div class="storage-bar-fill h-full rounded-full" [style.width.%]="storagePercent()"></div>
             </div>
-            <div class="text-[12px] text-gray-500 font-medium tracking-wide">
-              {{ usedStorage() }} of 5 GB used
+            <div class="text-[12px] text-[var(--text-muted)] font-medium tracking-wide">
+              {{ usedStorage() }} of {{ totalStorage() }} used
             </div>
           </div>
 
           <div class="flex items-center justify-between mt-1">
             <!-- Logout -->
-            <button (click)="logout()" class="logout-btn-sidebar pl-0 text-gray-500 hover:text-red-500 flex items-center gap-2 transition-colors flex-1">
-                <div class="w-1 h-4 bg-orange-400 rounded-full mr-2"></div>
-                <span class="logout-text">Logout</span>
+            <button (click)="logout()" class="logout-btn-sidebar group">
+                <div class="logout-indicator"></div>
+                <div class="sidebar-nav-icon-container">
+                  <svg class="w-5 h-5 text-orange-500 group-hover:text-red-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+                  </svg>
+                </div>
+                <span class="logout-text" *ngIf="!sidebarCollapsed()">Logout</span>
             </button>
             
             <!-- Dark Mode Toggle -->
-            <button (click)="toggleTheme()" class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 transition-colors" title="Toggle Theme">
+            <button (click)="toggleTheme()" class="p-2 rounded-lg hover:bg-[var(--bg-hover)] text-[var(--text-muted)] transition-colors" title="Toggle Theme">
                <svg *ngIf="theme() === 'light'" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
                </svg>
@@ -206,7 +224,6 @@ import { FormsModule } from '@angular/forms';
                </svg>
             </button>
           </div>
-
         </div>
       </aside>
 
@@ -248,41 +265,94 @@ import { FormsModule } from '@angular/forms';
           </div>
 
           <div class="header-right">
-            <!-- AI Assistant Button -->
-            <button class="ai-assistant-btn" (click)="toggleAIPanel()">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                      d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
-              </svg>
-              <span>AI Assistant</span>
-            </button>
+            <!-- Removed AI Assistant Button from right corner as requested -->
 
             <!-- Notifications -->
-            <button class="notification-btn">
-              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                      d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
-              </svg>
-              <span class="notification-badge">2</span>
-            </button>
+            <div class="relative">
+              <button class="notification-btn" (click)="toggleNotifications($event)">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                        d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
+                </svg>
+                <span *ngIf="notificationService.unreadCount() > 0" class="notification-badge">
+                  {{ notificationService.unreadCount() }}
+                </span>
+              </button>
 
-            <!-- User Profile -->
-            <div class="user-profile" (click)="toggleUserMenu()">
-              <div class="user-avatar overflow-hidden flex items-center justify-center">
-                <img *ngIf="authService.currentUser()?.photoURL" [src]="authService.currentUser()?.photoURL" alt="Profile" class="w-full h-full object-cover">
+              <!-- Notification Dropdown -->
+              <div *ngIf="showNotifications()" 
+                   class="absolute right-0 top-12 w-80 bg-[var(--bg-card)] rounded-xl shadow-xl border border-[var(--border-color)] z-[100] overflow-hidden animate-in fade-in slide-in-from-top-2">
+                <div class="p-4 border-b border-[var(--border-color)] flex justify-between items-center bg-[var(--bg-elevated)]/50">
+                  <h3 class="font-bold text-[var(--text-primary)]">Notifications</h3>
+                  <button (click)="markAllAsRead()" class="text-xs text-indigo-400 hover:text-indigo-500 font-medium">Mark all as read</button>
+                </div>
+                
+                <div class="max-h-[400px] overflow-y-auto">
+                  <div *ngIf="notificationService.notifications().length === 0" class="p-8 text-center text-[var(--text-muted)]">
+                    <div class="mb-2 text-2xl">🔔</div>
+                    <p class="text-sm">No notifications yet</p>
+                  </div>
+
+                  <div *ngFor="let note of notificationService.notifications()" 
+                       (click)="handleNotificationClick(note)"
+                       class="p-4 border-b border-[var(--border-color)] hover:bg-[var(--bg-hover)] cursor-pointer transition-colors relative"
+                       [ngClass]="{'bg-indigo-500/5': !note.read}">
+                    
+                    <div class="flex gap-3">
+                      <div class="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
+                           [ngClass]="{
+                             'bg-green-500/10 text-green-500': note.type === 'upload',
+                             'bg-purple-500/10 text-purple-500': note.type === 'ai',
+                             'bg-orange-500/10 text-orange-500': note.type === 'share'
+                           }">
+                        <span *ngIf="note.type === 'upload'">📁</span>
+                        <span *ngIf="note.type === 'ai'">🤖</span>
+                        <span *ngIf="note.type === 'share'">🔗</span>
+                      </div>
+                      <div class="flex-1">
+                        <p class="text-sm text-[var(--text-primary)]" [class.font-semibold]="!note.read">
+                          {{ note.message }}
+                        </p>
+                        <p class="text-[10px] text-[var(--text-muted)] mt-1 uppercase font-bold tracking-tighter">
+                          {{ note.createdAt | date:'shortTime' }} • {{ note.type }}
+                        </p>
+                      </div>
+                      <div *ngIf="!note.read" class="w-2 h-2 rounded-full bg-indigo-500 mt-2"></div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="p-3 text-center border-t border-[var(--border-color)] bg-[var(--bg-hover)]/30">
+                  <button class="text-xs font-semibold text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors uppercase tracking-widest">
+                    View All Activity
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="user-profile flex items-center gap-3 px-3 py-2 rounded-xl cursor-pointer transition-all duration-200 hover:bg-[var(--bg-hover)]" (click)="toggleUserMenu()">
+              <!-- Avatar with orange background as requested -->
+              <div class="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0 bg-[#D35400] shadow-sm">
+                <img *ngIf="authService.currentUser()?.photoURL" [src]="authService.currentUser()?.photoURL" alt="Profile" class="w-full h-full object-cover rounded-full">
                 <span *ngIf="!authService.currentUser()?.photoURL">{{ getInitials(authService.currentUser()?.displayName || authService.currentUser()?.email) }}</span>
               </div>
-              <div class="user-info">
-                <p class="user-name">{{ getUserName() }}</p>
-                <p class="user-email">{{ authService.currentUser()?.email }}</p>
+              
+              <div class="flex flex-col leading-tight overflow-hidden max-w-[120px]">
+                <p class="font-bold text-sm text-[var(--text-primary)] truncate">{{ getUserName() }}</p>
+                <p class="text-[10px] text-[var(--text-muted)] truncate mb-0.5">{{ authService.currentUser()?.email }}</p>
+                <p class="text-[10px] font-bold uppercase tracking-widest" 
+                   [style.color]="isAdmin() ? '#A855F7' : (authService.isPremium() ? 'var(--primary)' : 'var(--text-muted)')">
+                  {{ isAdmin() ? 'Admin' : (authService.currentUser()?.plan || 'Free') }}
+                </p>
               </div>
-              <svg class="w-4 h-4" style="color: var(--text-muted);" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+
+              <svg class="w-4 h-4 text-[var(--text-muted)] ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
               </svg>
             </div>
 
             <!-- User Menu Dropdown -->
-            <div *ngIf="showUserMenu()" class="absolute right-6 top-16 mt-2 p-2 rounded-xl card shadow-lg z-50 w-48 border border-gray-100">
+            <div *ngIf="showUserMenu()" class="absolute right-6 top-16 mt-2 p-2 rounded-xl bg-[var(--bg-card)] shadow-lg z-50 w-48 border border-[var(--border-color)]">
               
               <!-- ADMIN LINK -->
               <button 
@@ -500,6 +570,7 @@ export class UserLayoutComponent implements OnInit {
   showAIPanel = signal(false);
   sidebarCollapsed = signal(false);
   mobileOpen = signal(false);
+  showNotifications = signal(false);
   theme = signal<'light' | 'dark'>('light');
 
   currentRoute = '';
@@ -514,6 +585,11 @@ export class UserLayoutComponent implements OnInit {
     return this.formatFileSize(bytes);
   });
 
+  totalStorage = computed(() => {
+    const bytes = this.dashboardService.dashboardData()?.stats.storageLimit || 5 * 1024 * 1024 * 1024;
+    return this.formatFileSize(bytes);
+  });
+
   aiChatHistory = signal([
     { id: '1', title: 'Conversation 30/12/2025', date: 'Yesterday' },
   ]);
@@ -522,6 +598,7 @@ export class UserLayoutComponent implements OnInit {
     public authService: AuthService,
     private documentService: DocumentService,
     private dashboardService: DashboardService,
+    public notificationService: NotificationService,
     private router: Router
   ) {
     this.router.events.subscribe(() => {
@@ -541,10 +618,39 @@ export class UserLayoutComponent implements OnInit {
   }
 
   ngOnInit(): void {
-    if (this.authService.isAuthenticated()) {
-      this.dashboardService.getUnifiedDashboard().subscribe();
-    }
+    // We already have auth check in constructor or via effects
   }
+
+  // Reactive effect to load data when user is authenticated
+  private syncDataEffect = effect(() => {
+    const user = this.authService.currentUser();
+    if (user) {
+      this.dashboardService.getUnifiedDashboard().subscribe();
+      this.notificationService.loadNotifications().subscribe();
+
+      // OPTIMIZED POLLING: 60s interval + skip if tab is hidden
+      this.notificationService.startPolling(60000);
+
+      // Listen for visibility changes to pause/resume polling (saves reads when tab is hidden)
+      const visibilityHandler = () => {
+        if (document.hidden) {
+          this.notificationService.stopPolling();
+        } else {
+          this.notificationService.startPolling(60000);
+        }
+      };
+      document.addEventListener('visibilitychange', visibilityHandler);
+
+      // Cleanup handler on destroy via effect cleanup
+      return () => {
+        document.removeEventListener('visibilitychange', visibilityHandler);
+        this.notificationService.stopPolling();
+      };
+    } else {
+      this.notificationService.stopPolling();
+      return undefined;
+    }
+  }, { allowSignalWrites: true });
 
 
 
@@ -591,6 +697,28 @@ export class UserLayoutComponent implements OnInit {
     this.theme.set(newTheme);
     document.body.setAttribute('data-theme', newTheme);
     localStorage.setItem('theme', newTheme);
+  }
+
+  toggleNotifications(event: MouseEvent): void {
+    event.stopPropagation();
+    this.showNotifications.set(!this.showNotifications());
+    if (this.showUserMenu()) this.showUserMenu.set(false);
+  }
+
+  handleNotificationClick(note: Notification): void {
+    if (!note.read) {
+      this.notificationService.markAsRead(note.id).subscribe();
+    }
+
+    if (note.fileId) {
+      this.router.navigate(['/documents'], { queryParams: { id: note.fileId } });
+    }
+
+    this.showNotifications.set(false);
+  }
+
+  markAllAsRead(): void {
+    this.notificationService.markAllAsRead();
   }
 
   toggleUserMenu(): void {

@@ -115,7 +115,8 @@ async function secureDeleteDocument(userId, documentId) {
         }
 
         // SECURITY: Ownership verification
-        if (document.userId !== userId) {
+        const ownerId = document.ownerUserId || document.userId;
+        if (ownerId !== userId) {
             result.steps.validation.message = 'Access denied - ownership mismatch';
             result.error = 'Access denied';
             console.error(`   🚨 SECURITY ALERT: User ${userId} attempted to delete document owned by ${document.userId}`);
@@ -485,7 +486,7 @@ async function autoDeleteTrash() {
         const thirtyDaysAgoISO = thirtyDaysAgo.toISOString();
 
         // Grab all trashed documents
-        const snapshot = await db.collection('documents')
+        const snapshot = await db.collection('files')
             .where('isTrashed', '==', true)
             .get();
 
@@ -509,8 +510,113 @@ async function autoDeleteTrash() {
     }
 }
 
+/**
+ * COMPLETELY delete a user's account and all associated data
+ * 
+ * SECURITY CRITICAL:
+ * 1. Deletes all document records (Firestore)
+ * 2. Deletes all physical files (S3)
+ * 3. Deletes all AI vectors (Pinecone)
+ * 4. Deletes AI chat history
+ * 5. Deletes user profile
+ * 6. Deletes Firebase Auth user
+ * 
+ * @param {string} userId - User ID to purge
+ */
+async function deleteUserAccount(userId) {
+    console.log(`\n🧹 ========== FULL ACCOUNT DELETION START ==========`);
+    console.log(`   User ID: ${userId}`);
+    console.log(`   Timestamp: ${new Date().toISOString()}`);
+
+    const { getFirestore, getAuth } = require('../config/firebase.config');
+    const db = getFirestore();
+    const auth = getAuth();
+
+    try {
+        // 1. Find all documents belonging to this user
+        // Search both potential collections for robustness
+        const [filesSnap, docsSnap] = await Promise.all([
+            db.collection('files').where('userId', '==', userId).get(),
+            db.collection('documents').where('userId', '==', userId).get()
+        ]);
+
+        const documentIds = new Set();
+        filesSnap.forEach(doc => documentIds.add(doc.id));
+        docsSnap.forEach(doc => documentIds.add(doc.id));
+
+        console.log(`   Found ${documentIds.size} documents to delete.`);
+
+        // 2. Perform secure deletion for each document
+        // This handles S3, Pinecone, and Firestore metadata cleanup
+        for (const docId of documentIds) {
+            try {
+                await secureDeleteDocument(userId, docId);
+            } catch (err) {
+                console.error(`   ⚠️  Partial failure deleting document ${docId}:`, err.message);
+            }
+        }
+
+        // 3. Delete AI Chats (Subcollection)
+        try {
+            const chatsRef = db.collection('users').doc(userId).collection('ai_chats');
+            const chatsSnap = await chatsRef.get();
+            if (!chatsSnap.empty) {
+                const batch = db.batch();
+                chatsSnap.forEach(doc => batch.delete(doc.ref));
+                await batch.commit();
+                console.log(`   ✅ Deleted ${chatsSnap.size} AI chat records.`);
+            }
+        } catch (err) {
+            console.error(`   ⚠️  Failed to delete AI chats:`, err.message);
+        }
+
+        // 4. Delete Folders (Firestore)
+        try {
+            const foldersSnap = await db.collection('folders').where('userId', '==', userId).get();
+            if (!foldersSnap.empty) {
+                const batch = db.batch();
+                foldersSnap.forEach(doc => batch.delete(doc.ref));
+                await batch.commit();
+                console.log(`   ✅ Deleted ${foldersSnap.size} folder records.`);
+            }
+        } catch (err) {
+             console.error(`   ⚠️  Failed to delete folders:`, err.message);
+        }
+
+        // 4.5 Delete Shares (where user is owner)
+        try {
+            const sharesSnap = await db.collection('shares').where('ownerId', '==', userId).get();
+            if (!sharesSnap.empty) {
+                const batch = db.batch();
+                sharesSnap.forEach(doc => batch.delete(doc.ref));
+                await batch.commit();
+                console.log(`   ✅ Deleted ${sharesSnap.size} share records.`);
+            }
+        } catch (err) {
+             console.error(`   ⚠️  Failed to delete shares:`, err.message);
+        }
+
+        // 5. Delete User Profile document
+        await db.collection('users').doc(userId).delete();
+        console.log(`   ✅ User profile document deleted.`);
+
+        // 6. Delete from Firebase Auth (LAST STEP)
+        // If this succeeds, the user is effectively gone
+        await auth.deleteUser(userId);
+        console.log(`   ✅ Firebase Auth user deleted.`);
+
+        console.log(`🧹 ========== FULL ACCOUNT DELETION COMPLETED ==========`);
+        return { success: true, documentsDeleted: documentIds.size };
+
+    } catch (error) {
+        console.error(`❌ CRITICAL FAILURE during account deletion for ${userId}:`, error.message);
+        throw error;
+    }
+}
+
 module.exports = {
     secureDeleteDocument,
+    deleteUserAccount,
     deletePineconeVectors,
     generateChunkIds,
     autoDeleteTrash

@@ -3,8 +3,8 @@ import { CommonModule } from '@angular/common';
 import { AdminService } from '../../core/services/admin.service';
 
 @Component({
-  selector: 'app-admin-storage-monitor',
   standalone: true,
+  selector: 'app-admin-storage-monitor',
   imports: [CommonModule],
   template: `
     <div class="h-full w-full flex flex-col" *ngIf="!loading && stats">

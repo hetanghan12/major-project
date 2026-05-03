@@ -14,11 +14,23 @@
  */
 
 require('dotenv').config();
+const dns = require('dns');
+
+// Fix for Pinecone/AWS connection timeouts in some Node.js environments
+// Forces Node.js to prefer IPv4 over IPv6
+if (dns.setDefaultResultOrder) {
+  dns.setDefaultResultOrder('ipv4first');
+}
+
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const rateLimit = require('express-rate-limit');
+const compression = require('compression');
+const morgan = require('morgan');
 const { Pinecone } = require('@pinecone-database/pinecone');
 
 // Text extraction libraries
@@ -67,6 +79,15 @@ const n8nRoutes = require('./routes/n8n.routes');
 // Analytics & Tracking Routes
 const analyticsRoutes = require('./routes/analytics.routes');
 
+// Notification Routes
+const notificationRoutes = require('./routes/notification.routes');
+const {
+  verifyFirebaseToken,
+  verifyFirebaseTokenOrQuery,
+  isAdmin,
+  isAdminUser
+} = require('./middlewares/auth.middleware');
+
 
 // Error handler middleware
 const { errorHandler } = require('./middlewares/error.middleware');
@@ -78,8 +99,29 @@ const app = express();
 // CONFIGURATION
 // =============================================================================
 
-const PORT = process.env.PORT || 3000;
+const PORT = Number(process.env.PORT) || 3000;
 const UPLOADS_DIR = path.join(__dirname, 'uploads');
+const isProduction = process.env.NODE_ENV === 'production';
+let httpServer = null;
+let trashCleanupInterval = null;
+let trashCleanupTimeout = null;
+let thumbnailRecoveryTimeout = null;
+let isShuttingDown = false;
+
+function parseAllowedOrigins() {
+  return (process.env.ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+}
+
+const allowedOrigins = parseAllowedOrigins();
+
+function isOriginAllowed(origin) {
+  if (!origin) return true;
+  if (!isProduction) return true;
+  return allowedOrigins.includes(origin);
+}
 
 // Create uploads directory if it doesn't exist
 if (!fs.existsSync(UPLOADS_DIR)) {
@@ -492,10 +534,38 @@ async function deleteFromPinecone(documentId) {
 // MIDDLEWARE
 // =============================================================================
 
+app.set('trust proxy', 1);
+
+app.use(helmet({
+  crossOriginResourcePolicy: false
+}));
+
+// Request Logging
+app.use(morgan(isProduction ? 'combined' : 'dev'));
+
+// Response Compression
+app.use(compression());
+
+app.use(rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: Number(process.env.RATE_LIMIT_MAX || 300),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: 'Too many requests. Please try again later.'
+  }
+}));
+
 app.use(cors({
-  origin: '*', // ALLOW ALL ORIGINS FOR DEBUGGING
+  origin: (origin, callback) => {
+    if (isOriginAllowed(origin)) {
+      return callback(null, true);
+    }
+    return callback(new Error('Not allowed by CORS'));
+  },
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Range', 'Accept', 'X-Webhook-Secret', 'X-Status-Token'],
   credentials: true
 }));
 
@@ -551,6 +621,16 @@ app.get('/', (req, res) => {
  * Comprehensive System Diagnostics
  */
 app.get('/api/status', async (req, res) => {
+  const statusToken = process.env.STATUS_ENDPOINT_TOKEN;
+  const providedToken = req.headers['x-status-token'];
+
+  if (isProduction && (!statusToken || providedToken !== statusToken)) {
+    return res.status(404).json({
+      success: false,
+      message: 'Not found'
+    });
+  }
+
   const report = {
     success: true,
     timestamp: new Date().toISOString(),
@@ -559,7 +639,7 @@ app.get('/api/status', async (req, res) => {
       port: PORT,
       uptime: process.uptime()
     },
-    cors: 'open (*)',
+    cors: isProduction ? 'restricted' : 'development-open',
     services: {}
   };
 
@@ -619,11 +699,29 @@ app.get('/api/status', async (req, res) => {
     model: EMBEDDING_MODEL
   };
 
+  // 5. DOCUMENT THUMBNAIL DIAGNOSTIC
+  try {
+      const { getDownloadUrl } = require('./services/s3.service');
+      const testSign = await getDownloadUrl('test/diagnostic.png', 60);
+      report.services.thumbnail_signing = {
+          status: 'working',
+          test_url: testSign.substring(0, 50) + '...'
+      };
+  } catch (e) {
+      report.services.thumbnail_signing = { status: 'error', error: e.message };
+  }
+
   res.json(report);
 });
 
 app.get('/api/health', (req, res) => {
-  res.redirect('/api/status');
+  res.status(200).json({
+    success: true,
+    status: 'ok',
+    uptimeSeconds: Math.floor(process.uptime()),
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development'
+  });
 });
 
 // =============================================================================
@@ -693,7 +791,7 @@ app.post('/api/search', (req, res) => {
 });
 
 // Pinecone stats endpoint - shows all namespaces (user isolation proof)
-app.get('/api/pinecone/stats', async (req, res) => {
+app.get('/api/pinecone/stats', verifyFirebaseToken, isAdmin, async (req, res) => {
   if (!pineconeReady) {
     return res.status(503).json({ success: false, message: 'Pinecone not ready' });
   }
@@ -816,6 +914,12 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/admin', adminRoutes);
 
 // =============================================================================
+// PAYMENT ROUTES (RAZORPAY)
+// =============================================================================
+const paymentRoutes = require('./routes/payment.routes');
+app.use('/api/payment', paymentRoutes);
+
+// =============================================================================
 // N8N WEBHOOKS
 // =============================================================================
 app.use('/webhook', n8nRoutes);
@@ -831,24 +935,47 @@ app.use('/api/plans', plansRoutes);
 // =============================================================================
 app.use('/api/analytics', analyticsRoutes);
 
+// NOTIFICATION ROUTES
+app.use('/api/notifications', notificationRoutes);
+
 // =============================================================================
 // THUMBNAIL ROUTE - Google Drive-style document previews
 // =============================================================================
 const { getThumbnailPath, hasThumbnail } = require('./services/thumbnail.service');
+const { resolveDoc } = require('./services/firestore.service');
 
-app.get('/api/thumbnails/:filename', (req, res) => {
+app.get('/api/thumbnails/:filename', verifyFirebaseTokenOrQuery, async (req, res) => {
   const filename = req.params.filename;
   const documentId = path.basename(filename, '.png');
 
-  if (!hasThumbnail(documentId)) {
-    return res.status(404).json({ success: false, message: 'Thumbnail not found' });
+  try {
+    const { exists, data } = await resolveDoc(documentId);
+
+    if (!exists || !data) {
+      return res.status(404).json({ success: false, message: 'Thumbnail not found' });
+    }
+
+    const ownerUserId = data.ownerUserId || data.userId;
+    if (ownerUserId !== req.user.uid && !(await isAdminUser(req.user))) {
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
+
+    if (!hasThumbnail(documentId)) {
+      return res.status(404).json({ success: false, message: 'Thumbnail not found' });
+    }
+
+    const thumbnailPath = getThumbnailPath(documentId);
+    if (!thumbnailPath || !fs.existsSync(thumbnailPath)) {
+      return res.status(404).json({ success: false, message: 'Thumbnail not found' });
+    }
+
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    return res.sendFile(thumbnailPath);
+  } catch (error) {
+    console.error('Thumbnail access failed:', error.message);
+    return res.status(500).json({ success: false, message: 'Failed to load thumbnail' });
   }
-
-  const thumbnailPath = getThumbnailPath(documentId);
-
-  res.setHeader('Content-Type', 'image/png');
-  res.setHeader('Cache-Control', 'public, max-age=86400'); // Cache for 24 hours
-  res.sendFile(thumbnailPath);
 });
 
 // =============================================================================
@@ -856,7 +983,7 @@ app.get('/api/thumbnails/:filename', (req, res) => {
 // =============================================================================
 const { getQueueStats, getJobStatus } = require('./services/thumbnail-queue.service');
 
-app.get('/api/rendering/stats', (req, res) => {
+app.get('/api/rendering/stats', verifyFirebaseToken, isAdmin, (req, res) => {
   const stats = getQueueStats();
   res.json({
     success: true,
@@ -864,7 +991,7 @@ app.get('/api/rendering/stats', (req, res) => {
   });
 });
 
-app.get('/api/rendering/job/:jobId', (req, res) => {
+app.get('/api/rendering/job/:jobId', verifyFirebaseToken, isAdmin, (req, res) => {
   const job = getJobStatus(req.params.jobId);
   if (!job) {
     return res.status(404).json({ success: false, message: 'Job not found' });
@@ -884,7 +1011,7 @@ app.get('/api/rendering/job/:jobId', (req, res) => {
 });
 
 // Regenerate thumbnails for all existing documents (queues jobs)
-app.post('/api/rendering/regenerate', async (req, res) => {
+app.get('/api/rendering/regenerate', verifyFirebaseToken, isAdmin, async (req, res) => {
   console.log('🖼️ Starting thumbnail regeneration for existing documents...');
 
   const { getFirestore } = require('./config/firebase.config');
@@ -893,11 +1020,16 @@ app.post('/api/rendering/regenerate', async (req, res) => {
 
   try {
     const db = getFirestore();
-    const snapshot = await db.collection('documents')
-      .where('status', '==', 'ready')
-      .get();
 
-    if (snapshot.empty) {
+    // Fetch from both collections for full coverage
+    const [filesSnap, docsSnap] = await Promise.all([
+      db.collection('files').get(),
+      db.collection('documents').get()
+    ]);
+
+    const allDocs = [...filesSnap.docs, ...docsSnap.docs];
+
+    if (allDocs.length === 0) {
       return res.json({ success: true, message: 'No documents found', queued: 0 });
     }
 
@@ -907,21 +1039,27 @@ app.post('/api/rendering/regenerate', async (req, res) => {
     let noFile = 0;
 
     const STORAGE_DIR = path.join(__dirname, 'storage');
+    // Using Map to deduplicate if doc exists in both collections (using documentId as key)
+    const uniqueDocs = new Map();
+    allDocs.forEach(doc => uniqueDocs.set(doc.id, doc.data()));
 
-    for (const doc of snapshot.docs) {
-      const data = doc.data();
+    const force = req.query.force === 'true';
+
+    for (const [id, data] of uniqueDocs) {
       processed++;
 
-      // Skip if already has preview
-      if (data.previewUrl || data.thumbnailUrl) {
+      // Skip only if it's explicitly 'ready' and has a thumbnail URL
+      // (Unless force is true)
+      if (!force && data.thumbnailStatus === 'ready' && (data.previewUrl || data.thumbnailUrl)) {
         skipped++;
         continue;
       }
 
       // Find the local file
       const userId = data.userId;
-      const documentId = data.documentId;
+      const documentId = data.documentId || id;
       const storagePath = data.storagePath;
+      const s3Key = data.s3Key;
 
       let filePath = null;
 
@@ -938,14 +1076,24 @@ app.post('/api/rendering/regenerate', async (req, res) => {
         }
       }
 
-      if (!filePath || !fs.existsSync(filePath)) {
-        console.log(`   ⚠️ File not found for ${documentId}`);
+      // If neither local path nor S3 key exists, we can't render
+      if (!filePath && !s3Key) {
+        console.log(`   ⚠️ No file source found for ${documentId}`);
         noFile++;
         continue;
       }
 
       // Queue the job
       try {
+        const isXlsx = data.fileType === 'xlsx' ||
+            data.fileType === 'xls' ||
+            data.fileType === 'csv' ||
+            data.fileType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+            data.fileType === 'application/vnd.ms-excel' ||
+            data.fileType === 'text/csv' ||
+            data.fileName.toLowerCase().endsWith('.xlsx') ||
+            data.fileName.toLowerCase().endsWith('.xls') ||
+            data.fileName.toLowerCase().endsWith('.csv');
         queueThumbnailJob({
           filePath,
           documentId,
@@ -966,7 +1114,7 @@ app.post('/api/rendering/regenerate', async (req, res) => {
     res.json({
       success: true,
       message: 'Thumbnail regeneration jobs queued',
-      stats: { total: snapshot.size, queued, skipped, noFile }
+      stats: { total: uniqueDocs.size, processed, queued, skipped, noFile }
     });
 
   } catch (error) {
@@ -993,22 +1141,27 @@ app.post('/api/rendering/regenerate', async (req, res) => {
 // ERROR HANDLING
 // =============================================================================
 
-app.use((err, req, res, next) => {
-  console.error('❌ Error:', err.message);
-  res.status(err instanceof multer.MulterError ? 400 : 500).json({
-    success: false,
-    message: err.message
-  });
-});
+// =============================================================================
+// GLOBAL ERROR HANDLING
+// =============================================================================
+
+// Always use the centralized errorHandler to ensure consistent JSON responses
+// and proper HTTP status codes (40x, 50x)
+app.use(errorHandler);
 
 // =============================================================================
 // SERVE ANGULAR FRONTEND (production)
 // =============================================================================
-const frontendPath = path.join(__dirname, '..', 'frontend', 'dist', 'frontend', 'browser');
+const frontendPath = path.join(__dirname, '..', 'frontend-angular', 'dist', 'frontend-angular', 'browser');
 if (fs.existsSync(frontendPath)) {
-  app.use(express.static(frontendPath));
-  app.get('*', (req, res) => {
-    res.sendFile(path.join(frontendPath, 'index.html'));
+  app.use(express.static(frontendPath, {
+    maxAge: isProduction ? '1d' : '0',
+    index: false
+  }));
+  app.get(/.*/, (req, res) => {
+    res.sendFile(path.join(frontendPath, 'index.html'), {
+      maxAge: '0'
+    });
   });
   console.log('✅ Serving Angular frontend from:', frontendPath);
 } else {
@@ -1039,6 +1192,22 @@ function tryListenOnPort(port) {
         reject(err);
       });
   });
+}
+
+function logServerStarted(port) {
+  console.log('='.repeat(60));
+  console.log(`✅ Server running on: http://localhost:${port}`);
+  console.log(`✅ Uploads: ${UPLOADS_DIR}`);
+  console.log(`✅ Pinecone: ${pineconeReady ? 'READY' : 'DISABLED'}`);
+  console.log(`✅ OpenAI: ${openaiClient ? 'READY' : 'DISABLED'}`);
+  console.log('='.repeat(60));
+  console.log('📌 Endpoints:');
+  console.log(`   POST /api/secure/documents/upload - Upload + vectorize`);
+  console.log(`   GET  /api/secure/documents - List all`);
+  console.log(`   POST /api/ai/query - AI chat query`);
+  console.log(`   GET  /api/pinecone/stats - Check Pinecone`);
+  console.log(`   GET  /api/health - Health check`);
+  console.log('='.repeat(60) + '\n');
 }
 
 /**
@@ -1109,6 +1278,98 @@ async function startServerWithPortRetry(startPort, maxRetries = 10) {
   }
 }
 
+async function startHttpServer() {
+  if (isProduction) {
+    return startServerWithPortRetry(PORT, 10);
+  }
+
+  try {
+    const { server, port } = await tryListenOnPort(PORT);
+    logServerStarted(port);
+    return server;
+  } catch (error) {
+    if (error.code === 'EADDRINUSE') {
+      throw new Error(
+        `Port ${PORT} is already in use. Development mode does not auto-switch ports; free the port or set a different PORT.`
+      );
+    }
+
+    throw error;
+  }
+}
+
+async function gracefulShutdown(signal) {
+  if (isShuttingDown) {
+    return;
+  }
+
+  isShuttingDown = true;
+  console.log(`\n🛑 ${signal} received. Shutting down gracefully...`);
+
+  const forceExitTimer = setTimeout(() => {
+    console.error('⚠️ Graceful shutdown timed out. Forcing exit.');
+    process.exit(1);
+  }, 10000);
+  forceExitTimer.unref?.();
+
+  try {
+    if (trashCleanupInterval) {
+      clearInterval(trashCleanupInterval);
+      trashCleanupInterval = null;
+    }
+
+    if (trashCleanupTimeout) {
+      clearTimeout(trashCleanupTimeout);
+      trashCleanupTimeout = null;
+    }
+
+    if (thumbnailRecoveryTimeout) {
+      clearTimeout(thumbnailRecoveryTimeout);
+      thumbnailRecoveryTimeout = null;
+    }
+
+    try {
+      const { shutdownUsageResetScheduler } = require('./services/usage-reset.service');
+      shutdownUsageResetScheduler();
+    } catch (error) {
+      console.warn('Usage reset shutdown failed:', error.message);
+    }
+
+    try {
+      const { shutdownThumbnailQueue } = require('./services/thumbnail-queue.service');
+      shutdownThumbnailQueue();
+    } catch (error) {
+      console.warn('Thumbnail queue shutdown failed:', error.message);
+    }
+
+    try {
+      const { shutdownWebSocket } = require('./services/websocket.service');
+      await shutdownWebSocket();
+    } catch (error) {
+      console.warn('WebSocket shutdown failed:', error.message);
+    }
+
+    if (httpServer) {
+      await new Promise((resolve, reject) => {
+        httpServer.close((error) => {
+          if (error) {
+            return reject(error);
+          }
+          return resolve();
+        });
+      });
+      httpServer = null;
+    }
+
+    clearTimeout(forceExitTimer);
+    process.exit(0);
+  } catch (error) {
+    clearTimeout(forceExitTimer);
+    console.error('❌ Graceful shutdown failed:', error.message);
+    process.exit(1);
+  }
+}
+
 async function startServer() {
   console.log('\n' + '='.repeat(60));
   console.log('🚀 CLOUD SPACE BACKEND - STARTING');
@@ -1136,25 +1397,44 @@ async function startServer() {
   initializeOpenAI();
 
   // Initialize Pinecone with verification
-  const pineconeOk = await initializePinecone();
+  let pineconeOk = false;
+  try {
+    pineconeOk = await initializePinecone();
+  } catch (err) {
+    console.error('❌ Critical error during Pinecone initialization:', err.message);
+  }
 
   if (!pineconeOk) {
     console.log('\n⚠️  Server starting WITHOUT Pinecone (vector search disabled)');
     console.log('   Files will still be stored locally\n');
   }
 
-  // Start server with automatic port retry
+  // Start server (port retry is production-only)
   try {
-    await startServerWithPortRetry(PORT, 10);
+    httpServer = await startHttpServer();
 
     // Schedule 30-day trash cleanup to run once a day (every 24 hours)
     const { autoDeleteTrash } = require('./services/deletion.service');
-    setInterval(() => {
+    trashCleanupInterval = setInterval(() => {
       autoDeleteTrash();
     }, 24 * 60 * 60 * 1000);
 
     // Also run it once immediately on startup
-    setTimeout(autoDeleteTrash, 5000); // Wait 5 seconds after startup
+    trashCleanupTimeout = setTimeout(autoDeleteTrash, 5000); // Wait 5 seconds after startup
+
+    // Initialize AI Usage Reset Scheduler (Every 24 hours)
+    const { initializeUsageResetScheduler } = require('./services/usage-reset.service');
+    initializeUsageResetScheduler();
+
+    // ============================================================
+    // RECOVERY: Cleanup orphaned thumbnail jobs
+    // ============================================================
+    const { recoverOrphanedJobs } = require('./services/thumbnail-queue.service');
+    console.log('🔄 Checking for orphaned thumbnail processing jobs...');
+    // Run recovery after a short delay to allow background processes to stabilize
+    setTimeout(() => {
+      recoverOrphanedJobs().catch(e => console.error('⚠️  Thumbnail recovery failed:', e.message));
+    }, 15000);
 
   } catch (error) {
     console.error('\n❌ FATAL: Could not start server');
@@ -1169,15 +1449,8 @@ startServer().catch(err => {
   process.exit(1);
 });
 
-// Graceful shutdown on SIGTERM/SIGINT (for nodemon compatibility)
-process.on('SIGTERM', () => {
-  console.log('\n🛑 SIGTERM received. Shutting down gracefully...');
-  process.exit(0);
-});
-
-process.on('SIGINT', () => {
-  console.log('\n🛑 SIGINT received. Shutting down gracefully...');
-  process.exit(0);
-});
+// Graceful shutdown on SIGTERM/SIGINT
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 module.exports = app;

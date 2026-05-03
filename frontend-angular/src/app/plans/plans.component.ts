@@ -9,13 +9,15 @@ export interface SubscriptionPlan {
     description?: string;
     buttonText?: string;
     features?: string[];
-    price?: string;
+    price?: number | string;
     order?: number;
 }
 
+declare var Razorpay: any;
+
 @Component({
-    selector: 'app-plans',
     standalone: true,
+    selector: 'app-plans',
     imports: [CommonModule],
     templateUrl: './plans.component.html'
 })
@@ -23,6 +25,7 @@ export class PlansComponent implements OnInit {
     plans: SubscriptionPlan[] = [];
     loading = true;
     error = '';
+    processingPayment = false;
 
     constructor(private http: HttpClient) { }
 
@@ -50,9 +53,6 @@ export class PlansComponent implements OnInit {
                         if (!plan.name) {
                             plan.name = i === 0 ? 'Basic' : i === 1 ? 'Pro' : 'Enterprise';
                         }
-                        if (!plan.price && plan.name === 'Enterprise') {
-                            plan.price = 'Custom';
-                        }
                     });
 
                     this.loading = false;
@@ -61,6 +61,118 @@ export class PlansComponent implements OnInit {
                     console.error('Error fetching plans', err);
                     this.error = 'Failed to load subscription plans';
                     this.loading = false;
+                }
+            });
+    }
+
+    buyPlan(plan: SubscriptionPlan) {
+        if (plan.price === 'Custom' || plan.price === 0 || plan.price === 'Free') {
+            alert('This plan is either free or requires custom billing. Please contact support.');
+            return;
+        }
+
+        if (this.processingPayment) return;
+        this.processingPayment = true;
+
+        // 1. Create order on the backend
+        this.http.post<any>(`${environment.apiUrl}/payment/create-order`, { planId: plan.id })
+            .subscribe({
+                next: (orderRes) => {
+                    if (!orderRes.success) {
+                        alert('Could not initiate payment: ' + (orderRes.message || 'Unknown error'));
+                        this.processingPayment = false;
+                        return;
+                    }
+
+                    // 2. Open Razorpay Checkout
+                    const options = {
+                        key: orderRes.key,
+                        amount: orderRes.amount,
+                        currency: orderRes.currency,
+                        name: 'Cloud Space',
+                        description: `Subscription to ${plan.name} Plan`,
+                        image: '/assets/logo.png',
+                        order_id: orderRes.orderId,
+                        handler: (response: any) => {
+                            // 3. Verify payment on backend
+                            this.verifyPayment(response, plan.id);
+                        },
+                        prefill: {
+                            name: 'Cloud Space User',
+                            method: 'upi' // Suggest UPI as preferred method
+                        },
+                        notes: {
+                            plan_id: plan.id,
+                            plan_name: plan.name,
+                            category: 'Subscription'
+                        },
+                        theme: {
+                            color: '#4f46e5'
+                        },
+                        config: {
+                            display: {
+                                blocks: {
+                                    upi: {
+                                        name: 'UPI / QR Code',
+                                        instruments: [{ method: 'upi' }]
+                                    }
+                                },
+                                sequence: ['block.upi', 'block.other'],
+                                preferences: {
+                                    show_default_blocks: true
+                                }
+                            }
+                        },
+                        modal: {
+                            ondismiss: () => {
+                                this.processingPayment = false;
+                            }
+                        }
+                    };
+
+                    const rzp = new Razorpay(options);
+
+                    rzp.on('payment.failed', (response: any) => {
+                        console.error('Payment Failed:', response.error);
+                        alert('Payment failed. Please try again.');
+                        this.processingPayment = false;
+                    });
+
+                    rzp.open();
+                },
+                error: (err) => {
+                    console.error('Error creating order', err);
+                    const msg = err.error?.error || err.error?.message || 'Error preparing payment gateway.';
+                    alert(msg);
+                    this.processingPayment = false;
+                }
+            });
+    }
+
+    verifyPayment(response: any, planId: string) {
+        const verifyData = {
+            razorpay_order_id: response.razorpay_order_id,
+            razorpay_payment_id: response.razorpay_payment_id,
+            razorpay_signature: response.razorpay_signature,
+            planId: planId
+        };
+
+        this.http.post<any>(`${environment.apiUrl}/payment/verify`, verifyData)
+            .subscribe({
+                next: (res) => {
+                    this.processingPayment = false;
+                    if (res.success) {
+                        alert('Payment Successful! Your plan has been upgraded.');
+                        // Could navigate to dashboard here or refresh user status
+                        window.location.reload();
+                    } else {
+                        alert('Payment verification failed.');
+                    }
+                },
+                error: (err) => {
+                    this.processingPayment = false;
+                    console.error('Verification error:', err);
+                    alert('Error verifying payment. If amount deducted, it will be refunded or manually credited.');
                 }
             });
     }

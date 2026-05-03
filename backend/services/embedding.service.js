@@ -20,9 +20,11 @@ const { v4: uuidv4 } = require('uuid');
  * @param {string} documentId - Document ID
  * @param {string} fileName - Original file name
  * @param {Array} chunks - Array of text chunks
+ * @param {Object} options - Options including checkCancellation callback
  * @returns {Object} Result with vectorCount and chunkIds for later deletion
  */
-async function processAndStoreEmbeddings(userId, documentId, fileName, chunks) {
+async function processAndStoreEmbeddings(userId, documentId, fileName, chunks, options = {}) {
+    const { checkCancellation } = options;
     console.log(`\n🧠 ========== EMBEDDING PIPELINE START ==========`);
     console.log(`   Document: ${documentId}`);
     console.log(`   User: ${userId}`);
@@ -43,14 +45,25 @@ async function processAndStoreEmbeddings(userId, documentId, fileName, chunks) {
         const batchSize = 20;
         const vectors = [];
         const chunkIds = [];  // CRITICAL: Track IDs for deletion
+        let totalUsage = { prompt_tokens: 0, total_tokens: 0 };
         const EXPECTED_DIM = 3072;
 
         for (let i = 0; i < texts.length; i += batchSize) {
             const batch = texts.slice(i, i + batchSize);
             console.log(`   📊 Generating embeddings: batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(texts.length / batchSize)} (${batch.length} texts)`);
 
-            const embeddings = await generateEmbeddings(batch);
-            console.log(`   ✅ Got ${embeddings.length} embeddings`);
+            const { embeddings, usage } = await generateEmbeddings(batch);
+            console.log(`   ✅ Got ${embeddings.length} embeddings (${usage.total_tokens} tokens)`);
+            
+            // Accumulate usage
+            totalUsage.prompt_tokens += (usage.prompt_tokens || 0);
+            totalUsage.total_tokens += (usage.total_tokens || 0);
+
+            // Check for cancellation after embedding generation but before vector preparation
+            if (checkCancellation && (await checkCancellation())) {
+                console.log(`   ⏹️ Cancellation detected during embedding generation for ${documentId}`);
+                throw new Error('EMBEDDING_CANCELLED');
+            }
 
             // Create vector objects with metadata
             for (let j = 0; j < embeddings.length; j++) {
@@ -93,6 +106,12 @@ async function processAndStoreEmbeddings(userId, documentId, fileName, chunks) {
             return { success: false, vectorCount: 0, chunkIds: [], error: 'No vectors generated' };
         }
 
+        // Check for cancellation right before upserting to Pinecone
+        if (checkCancellation && (await checkCancellation())) {
+            console.log(`   ⏹️ Cancellation detected before Pinecone upsert for ${documentId}`);
+            throw new Error('EMBEDDING_CANCELLED');
+        }
+
         // Upsert vectors to Pinecone with user namespace
         console.log(`   📤 Upserting to Pinecone namespace: ${userId}`);
         await upsertVectors(userId, vectors);
@@ -104,7 +123,8 @@ async function processAndStoreEmbeddings(userId, documentId, fileName, chunks) {
         return {
             success: true,
             vectorCount: vectors.length,
-            chunkIds: chunkIds  // Used for explicit ID-based deletion
+            chunkIds: chunkIds,  // Used for explicit ID-based deletion
+            usage: totalUsage   // Returned for analytics tracking
         };
 
     } catch (error) {
@@ -130,7 +150,7 @@ async function searchDocuments(userId, query, topK = 5, sharedNamespaces = []) {
 
     try {
         // Generate embedding for the query
-        const queryEmbedding = await generateEmbedding(query);
+        const { embedding: queryEmbedding, usage } = await generateEmbedding(query);
 
         // 1. Query Pinecone with user namespace (no filter needed)
         let allResults = await queryVectors(userId, queryEmbedding, topK);
@@ -158,14 +178,17 @@ async function searchDocuments(userId, query, topK = 5, sharedNamespaces = []) {
 
         console.log(`   ✅ Found ${topResults.length} relevant chunks (combined)`);
 
-        return topResults.map(match => ({
-            score: match.score,
-            text: match.metadata?.text || '',
-            documentId: match.metadata?.documentId || '',
-            fileName: match.metadata?.fileName || '',
-            chunkIndex: match.metadata?.chunkIndex || 0,
-            isShared: match.metadata?.userId !== userId
-        }));
+        return {
+            results: topResults.map(match => ({
+                score: match.score,
+                text: match.metadata?.text || '',
+                documentId: match.metadata?.documentId || '',
+                fileName: match.metadata?.fileName || '',
+                chunkIndex: match.metadata?.chunkIndex || 0,
+                isShared: match.metadata?.userId !== userId
+            })),
+            usage
+        };
 
     } catch (error) {
         console.error('❌ Document search failed:', error.message);

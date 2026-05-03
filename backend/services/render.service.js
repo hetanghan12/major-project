@@ -119,6 +119,10 @@ async function renderThumbnail({
     console.log(`   Type: ${fileType}`);
     console.log(`   Document ID: ${documentId}`);
 
+    if (!documentId || documentId === 'undefined') {
+        throw new Error('Invalid or missing documentId for thumbnail generation');
+    }
+
     const startTime = Date.now();
     const normalizedType = normalizeFileType(fileType, fileName);
 
@@ -162,20 +166,25 @@ async function renderThumbnail({
                 ({ buffer: thumbnailBuffer, method: renderMethod } = await renderGeneric(normalizedType, fileName));
         }
 
-        // Upload to S3
-        const thumbnailS3Key = `thumbnails/${userId}/${documentId}.png`;
-        const s3Result = await uploadToS3(thumbnailBuffer, thumbnailS3Key, 'image/png');
-
-        // Also save locally as backup
+        // 1. Save locally as immediate source of truth for the local API
         const localPath = path.join(CONFIG.LOCAL_DIR, `${documentId}.png`);
         fs.writeFileSync(localPath, thumbnailBuffer);
 
+        // 2. Attempt S3 upload for cloud persistence (Non-blocking failure)
+        let s3Result = { publicUrl: `/api/thumbnails/${documentId}.png`, s3Key: null };
+        try {
+            const thumbnailS3Key = `thumbnails/${userId}/${documentId}.png`;
+            const uploadResult = await uploadToS3(thumbnailBuffer, thumbnailS3Key, 'image/png');
+            s3Result = { publicUrl: uploadResult.s3Url, s3Key: uploadResult.s3Key };
+        } catch (s3Error) {
+            console.warn(`   ⚠️ S3 sync failed but local thumbnail saved: ${s3Error.message}`);
+        }
+
         const duration = Date.now() - startTime;
         console.log(`   ✅ Rendered in ${duration}ms using ${renderMethod}`);
-        console.log(`   📁 S3: ${s3Result.s3Key}`);
 
         return {
-            previewUrl: s3Result.s3Url,
+            previewUrl: s3Result.publicUrl,
             previewPath: s3Result.s3Key,
             localPath,
             method: renderMethod,
@@ -185,19 +194,34 @@ async function renderThumbnail({
     } catch (error) {
         console.error(`   ❌ Rendering failed: ${error.message}`);
 
-        // Fallback to styled placeholder
-        const fallbackBuffer = await renderFallbackPlaceholder(normalizedType, fileName);
+        try {
+            // Fallback to styled placeholder
+            const fallbackBuffer = await renderFallbackPlaceholder(normalizedType, fileName);
 
-        // Upload fallback to S3
-        const thumbnailS3Key = `thumbnails/${userId}/${documentId}.png`;
-        const s3Result = await uploadToS3(fallbackBuffer, thumbnailS3Key, 'image/png');
+            // 1. Save local fallback
+            const localPath = path.join(CONFIG.LOCAL_DIR, `${documentId}.png`);
+            fs.writeFileSync(localPath, fallbackBuffer);
 
-        return {
-            previewUrl: s3Result.s3Url,
-            previewPath: s3Result.s3Key,
-            method: 'fallback',
-            error: error.message
-        };
+            // 2. Sync fallback to S3 if possible
+            let s3Result = { publicUrl: `/api/thumbnails/${documentId}.png`, s3Key: null };
+            try {
+                const thumbnailS3Key = `thumbnails/${userId}/${documentId}.png`;
+                const uploadResult = await uploadToS3(fallbackBuffer, thumbnailS3Key, 'image/png');
+                s3Result = { publicUrl: uploadResult.s3Url, s3Key: uploadResult.s3Key };
+            } catch (s3Error) {
+                console.warn(`   ⚠️ S3 fallback sync failed: ${s3Error.message}`);
+            }
+
+            return {
+                previewUrl: s3Result.publicUrl,
+                previewPath: s3Result.s3Key,
+                localPath,
+                method: 'fallback'
+            };
+        } catch (fatalError) {
+            console.error(`   💀 💀 FATAL RENDERING ERROR: ${fatalError.message}`);
+            throw fatalError; // Re-throw to allow worker retry
+        }
     }
 }
 
@@ -226,11 +250,33 @@ async function renderPDF(buffer, filePath) {
     }
 
     // Try native pdf-poppler first (highest quality) - Requires file on disk
-    if (pdfPoppler && filePath && fs.existsSync(filePath)) {
-        try {
-            return await renderPDFWithPoppler(filePath);
-        } catch (e) {
-            console.log(`   ⚠️ pdf-poppler failed: ${e.message}`);
+    let tempPath = null;
+    try {
+        let currentFilePath = filePath;
+
+        // If no file on disk but we have a buffer, create a temp file for poppler
+        if (!currentFilePath || !fs.existsSync(currentFilePath)) {
+            const tempDir = path.join(CONFIG.LOCAL_DIR, '..', 'tmp');
+            if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+
+            tempPath = path.join(tempDir, `temp_${Date.now()}.pdf`);
+            fs.writeFileSync(tempPath, buffer);
+            currentFilePath = tempPath;
+        }
+
+        if (pdfPoppler && currentFilePath && fs.existsSync(currentFilePath)) {
+            try {
+                return await renderPDFWithPoppler(currentFilePath);
+            } catch (e) {
+                console.log(`   ⚠️ pdf-poppler failed: ${e.message}`);
+            }
+        }
+    } catch (e) {
+        console.log(`   ⚠️ Poppler setup failed: ${e.message}`);
+    } finally {
+        // Clean up temp file
+        if (tempPath && fs.existsSync(tempPath)) {
+            try { fs.unlinkSync(tempPath); } catch (e) { }
         }
     }
 
@@ -265,15 +311,30 @@ async function renderPDFWithPoppler(filePath) {
     await pdfPoppler.convert(filePath, opts);
 
     // Read the generated image
-    const generatedFile = `${outputFile}-1.png`;
-    if (fs.existsSync(generatedFile)) {
-        const buffer = fs.readFileSync(generatedFile);
+    // Note: Poppler has inconsistent naming schemes depending on version (-1.png vs -01.png)
+    const possibleFiles = [
+        `${outputFile}-1.png`,
+        `${outputFile}-01.png`,
+        path.join(outputDir, `${baseName}-poppler-1.png`),
+        path.join(outputDir, `${baseName}-poppler-01.png`)
+    ];
+
+    let sourceFile = possibleFiles.find(f => fs.existsSync(f));
+
+    if (sourceFile) {
+        const buffer = fs.readFileSync(sourceFile);
         // Clean up temp file
-        fs.unlinkSync(generatedFile);
+        fs.unlinkSync(sourceFile);
+
+        // Clean up any other potential matches (sometimes poppler leaves more files)
+        possibleFiles.forEach(f => {
+            if (fs.existsSync(f)) try { fs.unlinkSync(f); } catch (e) { }
+        });
+
         return { buffer, method: 'pdf-poppler' };
     }
 
-    throw new Error('pdf-poppler did not generate output file');
+    throw new Error('pdf-poppler did not generate output file in expected location');
 }
 
 async function renderPDFWithPuppeteer(pdfBuffer) {

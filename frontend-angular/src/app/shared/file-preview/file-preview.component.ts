@@ -9,16 +9,20 @@
 
 import { Component, Input, Output, EventEmitter, HostListener, OnInit, OnChanges, SimpleChanges, Inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { HttpClient } from '@angular/common/http';
 import { CloudFile } from '../../core/models/file.model';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { environment } from '../../../environments/environment';
 import { AuthService } from '../../core/services/auth.service';
+import { DocumentService } from '../../core/services/document.service';
 import { SpreadsheetViewerComponent } from '../spreadsheet-viewer/spreadsheet-viewer.component';
+import { FormsModule } from '@angular/forms';
+import { lastValueFrom } from 'rxjs';
 
 @Component({
-    selector: 'app-file-preview',
     standalone: true,
-    imports: [CommonModule, SpreadsheetViewerComponent],
+    selector: 'app-file-preview',
+    imports: [CommonModule, SpreadsheetViewerComponent, FormsModule],
     template: `
         <div class="preview-overlay" (click)="onClose()">
             <div class="preview-container" (click)="$event.stopPropagation()">
@@ -27,8 +31,25 @@ import { SpreadsheetViewerComponent } from '../spreadsheet-viewer/spreadsheet-vi
                     <div class="preview-title">
                         <span [class]="getFileIconClass()">{{ getFileIcon() }}</span>
                         <span>{{ file?.fileName }}</span>
+                        
+                        <!-- View Only Badge -->
+                        <span *ngIf="isReadOnly" class="view-only-badge">
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                            </svg>
+                            View Only
+                        </span>
                     </div>
                     <div class="preview-actions">
+                        <!-- Save Button (Only for text files with edit permission) -->
+                        <button *ngIf="canEdit && isText()" 
+                                class="save-action-btn" 
+                                [disabled]="isSaving || !hasChanges"
+                                (click)="onSave()">
+                            <span *ngIf="!isSaving">Save</span>
+                            <div *ngIf="isSaving" class="spinner-small"></div>
+                        </button>
                         <button class="preview-action-btn" title="Download" (click)="onDownload()">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
@@ -107,8 +128,23 @@ import { SpreadsheetViewerComponent } from '../spreadsheet-viewer/spreadsheet-vi
                     <!-- Text/Document Preview -->
                     <ng-container *ngIf="!isLoading && !loadError && isText()">
                         <div class="text-preview">
-                            <pre *ngIf="textContent">{{ textContent }}</pre>
-                            <div *ngIf="!textContent" class="text-preview-loading">
+                            <!-- Permission Error Message Overlay (Only when not authorized) -->
+                            <div *ngIf="showPermissionError" class="permission-error-banner">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                                </svg>
+                                {{ permissionErrorMessage }}
+                            </div>
+
+                            <textarea 
+                                *ngIf="canEdit"
+                                class="text-editor"
+                                [(ngModel)]="textContent"
+                                (input)="onContentChange()">
+                            </textarea>
+                            <pre *ngIf="!canEdit && textContent">{{ textContent }}</pre>
+                            
+                            <div *ngIf="!textContent && !canEdit && !showPermissionError" class="text-preview-loading">
                                 <div class="spinner"></div>
                                 <span>Loading content...</span>
                             </div>
@@ -181,19 +217,48 @@ import { SpreadsheetViewerComponent } from '../spreadsheet-viewer/spreadsheet-vi
                         </div>
                     </ng-container>
 
-                    <!-- Audio Preview -->
+                    <!-- Audio Preview - Premium Glassmorphic Design -->
                     <ng-container *ngIf="!isLoading && !loadError && isAudio()">
-                        <div class="audio-preview text-center p-12">
-                            <div class="mb-6">
-                                <span class="text-6xl">🎵</span>
+                        <div class="audio-viewer-container">
+                            <div class="audio-card">
+                                <div class="audio-visualizer">
+                                    <div class="music-icon-wrapper">
+                                        <div class="music-waves">
+                                            <span></span><span></span><span></span><span></span><span></span>
+                                        </div>
+                                        <svg class="w-24 h-24 text-emerald-400" fill="currentColor" viewBox="0 0 20 20">
+                                            <path d="M18 3a1 1 0 00-1.196-.98l-10 2A1 1 0 006 5v9.114A4.369 4.369 0 005 14c-1.657 0-3 1.12-3 2.5S3.343 19 5 19s3-1.12 3-2.5V8.55l8-1.6V12.114A4.369 4.369 0 0015 12c-1.657 0-3 1.12-3 2.5s1.343 2.5 3 2.5 3-1.12 3-2.5V3z"/>
+                                        </svg>
+                                    </div>
+                                </div>
+                                <div class="audio-info">
+                                    <h3 class="audio-title">{{ file?.fileName }}</h3>
+                                    <p class="audio-meta">{{ file?.fileType?.toUpperCase() }} • {{ formatFileSize(file?.fileSize || 0) }}</p>
+                                </div>
+                                <div class="audio-player-wrapper">
+                                    <audio *ngIf="audioUrl" controls [src]="audioUrl" class="modern-audio-player"></audio>
+                                </div>
                             </div>
-                            <h3 class="text-xl font-semibold mb-6 text-gray-800 dark:text-gray-100">{{ file?.fileName }}</h3>
-                            <audio *ngIf="audioUrl" controls [src]="audioUrl" class="w-full max-w-md mx-auto"></audio>
+                        </div>
+                    </ng-container>
+                    
+                    <!-- Video Preview -->
+                    <ng-container *ngIf="!isLoading && !loadError && isVideo()">
+                        <div class="video-preview w-full h-full flex items-center justify-center bg-black">
+                            <video 
+                                *ngIf="videoUrl" 
+                                controls 
+                                autoplay 
+                                [src]="videoUrl" 
+                                class="max-w-full max-h-full">
+                                Your browser does not support the video tag.
+                            </video>
                         </div>
                     </ng-container>
 
                     <!-- Unsupported Format -->
-                    <ng-container *ngIf="!isLoading && !loadError && !isPDF() && !isImage() && !isText() && !isDocx() && !isExcel() && !isPpt() && !isAudio()">
+                    <ng-container *ngIf="!isLoading && !loadError && !isPDF() && !isImage() && !isText() && !isDocx() && !isExcel() && !isPpt() && !isAudio() && !isVideo()">
+
                         <div class="unsupported-preview">
                             <div class="unsupported-icon">
                                 <span class="text-6xl">{{ getFileIcon() }}</span>
@@ -505,6 +570,66 @@ import { SpreadsheetViewerComponent } from '../spreadsheet-viewer/spreadsheet-vi
         .file-icon-txt { color: #6b7280; }
         .file-icon-folder { color: #fbbf24; }
 
+        .view-only-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 8px;
+            background: #374151;
+            color: #9ca3af;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-left: 8px;
+            border: 1px solid #4b5563;
+        }
+
+        .save-action-btn {
+            padding: 6px 16px;
+            background: #5b4ee8;
+            color: white;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            transition: all 0.2s;
+            margin-right: 8px;
+        }
+
+        .save-action-btn:hover:not(:disabled) {
+            background: #6b5df0;
+        }
+
+        .save-action-btn:disabled {
+            background: #374151;
+            color: #6b7280;
+            cursor: not-allowed;
+        }
+
+        .text-editor {
+            width: 100%;
+            height: 100%;
+            background: transparent;
+            color: #e5e7eb;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 14px;
+            line-height: 1.6;
+            padding: 0;
+            border: none;
+            outline: none;
+            resize: none;
+        }
+
+        .spinner-small {
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
         .spinner {
             width: 32px;
             height: 32px;
@@ -533,6 +658,21 @@ import { SpreadsheetViewerComponent } from '../spreadsheet-viewer/spreadsheet-vi
         .btn-primary:hover {
             box-shadow: 0 4px 12px rgba(91, 78, 232, 0.35);
             transform: translateY(-1px);
+        }
+
+        .permission-error-banner {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+            color: #f87171;
+            padding: 10px 16px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            margin-bottom: 16px;
+            animation: fadeIn 0.3s ease-out;
         }
 
         .btn-secondary {
@@ -627,6 +767,107 @@ import { SpreadsheetViewerComponent } from '../spreadsheet-viewer/spreadsheet-vi
             display: flex;
             flex-direction: column;
         }
+        /* ==================== AUDIO VIEWER ==================== */
+        .audio-viewer-container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: radial-gradient(circle at center, rgba(16, 185, 129, 0.08) 0%, transparent 70%);
+        }
+
+        .audio-card {
+            width: 90%;
+            max-width: 500px;
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(71, 85, 105, 0.3);
+            border-radius: 24px;
+            padding: 40px;
+            text-align: center;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .audio-visualizer {
+            margin-bottom: 30px;
+            display: flex;
+            justify-content: center;
+        }
+
+        .music-icon-wrapper {
+            position: relative;
+            background: rgba(16, 185, 129, 0.1);
+            width: 140px;
+            height: 140px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 2px solid rgba(16, 185, 129, 0.2);
+        }
+
+        .music-waves {
+            position: absolute;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            bottom: 25px;
+        }
+
+        .music-waves span {
+            width: 4px;
+            height: 8px;
+            background: #10b981;
+            border-radius: 2px;
+            animation: wave 1.2s ease-in-out infinite;
+        }
+
+        .music-waves span:nth-child(2) { animation-delay: 0.1s; height: 16px; }
+        .music-waves span:nth-child(3) { animation-delay: 0.2s; height: 12px; }
+        .music-waves span:nth-child(4) { animation-delay: 0.3s; height: 20px; }
+        .music-waves span:nth-child(5) { animation-delay: 0.4s; height: 10px; }
+
+        @keyframes wave {
+            0%, 100% { transform: scaleY(1); }
+            50% { transform: scaleY(2.5); }
+        }
+
+        .audio-info {
+            margin-bottom: 30px;
+        }
+
+        .audio-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: #f1f5f9;
+            margin-bottom: 8px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .audio-meta {
+            font-size: 14px;
+            color: #94a3b8;
+        }
+
+        .audio-player-wrapper {
+            width: 100%;
+        }
+
+        .modern-audio-player {
+            width: 100%;
+            height: 48px;
+            border-radius: 12px;
+            filter: invert(100%) hue-rotate(180deg) brightness(1.5); /* Make standard player dark-theme friendly */
+        }
+
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
     `]
 })
 export class FilePreviewComponent implements OnInit, OnChanges {
@@ -644,9 +885,12 @@ export class FilePreviewComponent implements OnInit, OnChanges {
     excelPreviewUrl: string = '';
     officePreviewUrl: SafeResourceUrl | null = null;
     audioUrl: SafeResourceUrl | null = null;
+    videoUrl: SafeResourceUrl | null = null;
 
     // State
     isLoading: boolean = true;
+    isSaving: boolean = false;
+    hasChanges: boolean = false;
     loadError: string = '';
     showDetails: boolean = false;
     docxLoading: boolean = false;
@@ -659,7 +903,9 @@ export class FilePreviewComponent implements OnInit, OnChanges {
 
     constructor(
         private sanitizer: DomSanitizer,
-        private authService: AuthService
+        private authService: AuthService,
+        private documentService: DocumentService,
+        private http: HttpClient
     ) { }
 
     @HostListener('document:keydown.escape')
@@ -673,6 +919,10 @@ export class FilePreviewComponent implements OnInit, OnChanges {
 
     ngOnChanges(changes: SimpleChanges) {
         if (changes['file'] && this.file) {
+            // Update content if it changed and we're not currently editing a modified version
+            if (!this.hasChanges && (this.file as any).content !== undefined) {
+                this.textContent = (this.file as any).content;
+            }
             this.loadPreview();
         }
     }
@@ -718,6 +968,8 @@ export class FilePreviewComponent implements OnInit, OnChanges {
             this.loadPptPreviewWithAuth();
         } else if (this.isAudio()) {
             this.loadAudioPreviewWithAuth();
+        } else if (this.isVideo()) {
+            this.loadVideoPreviewWithAuth();
         } else {
             this.isLoading = false;
         }
@@ -725,37 +977,27 @@ export class FilePreviewComponent implements OnInit, OnChanges {
 
     private async loadPdfPreviewWithAuth() {
         try {
-            const docId = (this.file as any)?.documentId;
+            const docId = this.getDocId();
             if (!docId) throw new Error('Document ID not found');
 
-            const token = await this.getAuthToken();
-
             // 1. Fetch document metadata first to get fresh signed URL
-            const metaResponse = await fetch(`${this.apiUrl}/secure/documents/${docId}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
+            // HttpClient automatically adds Authorization and ngrok-skip-browser-warning
+            const metaData: any = await this.http.get(`${this.apiUrl}/secure/documents/${docId}`).toPromise();
 
-            if (metaResponse.ok) {
-                const metaData = await metaResponse.json();
-                if (metaData.success && metaData.document?.signedUrl) {
-                    console.log('[FilePreview] Using direct S3 signed URL');
-                    // Use signed URL directly - no auth headers needed for S3
-                    this.directPdfUrl = this.sanitizer.bypassSecurityTrustResourceUrl(metaData.document.signedUrl);
-                    this.isLoading = false;
-                    return;
-                }
+            if (metaData && metaData.success && metaData.document?.signedUrl) {
+                console.log('[FilePreview] Using direct S3 signed URL');
+                this.directPdfUrl = this.sanitizer.bypassSecurityTrustResourceUrl(metaData.document.signedUrl);
+                this.isLoading = false;
+                return;
             }
 
             // 2. Fallback: Fetch via proxy if no signed URL (legacy files)
             console.log('[FilePreview] Falling back to proxy fetch');
             const previewUrl = `${this.apiUrl}/secure/documents/${docId}/view`;
-            const response = await fetch(previewUrl, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
+            const blob = await this.http.get(previewUrl, { responseType: 'blob' }).toPromise();
+            
+            if (!blob) throw new Error('Failed to fetch document blob');
 
-            if (!response.ok) throw new Error(`Status ${response.status}`);
-
-            const blob = await response.blob();
             const blobUrl = URL.createObjectURL(blob);
             this.directPdfUrl = this.sanitizer.bypassSecurityTrustResourceUrl(blobUrl);
             this.isLoading = false;
@@ -770,41 +1012,25 @@ export class FilePreviewComponent implements OnInit, OnChanges {
 
     private async loadImagePreviewWithAuth() {
         try {
-            const docId = (this.file as any)?.documentId;
+            const docId = this.getDocId();
             if (!docId) throw new Error('Document ID not found');
 
-            const token = await this.getAuthToken();
-
             // 1. Fetch document metadata first to get fresh signed URL
-            const metaResponse = await fetch(`${this.apiUrl}/secure/documents/${docId}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
+            const metaData: any = await this.http.get(`${this.apiUrl}/secure/documents/${docId}`).toPromise();
 
-            if (metaResponse.ok) {
-                const metaData = await metaResponse.json();
-                if (metaData.success && metaData.document?.signedUrl) {
-                    console.log('[FilePreview] Using direct S3 signed URL for image');
-                    // Use signed URL directly - best performance
-                    this.imageUrl = metaData.document.signedUrl;
-                    this.isLoading = false;
-                    return;
-                }
+            if (metaData && metaData.success && metaData.document?.signedUrl) {
+                console.log('[FilePreview] Using direct S3 signed URL for image');
+                this.imageUrl = metaData.document.signedUrl;
+                this.isLoading = false;
+                return;
             }
 
             // 2. Fallback to blob fetch (legacy)
             console.log('[FilePreview] Falling back to proxy fetch for image');
-            const response = await fetch(
-                `${this.apiUrl}/secure/documents/${docId}/view`,
-                {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                }
-            );
+            const blob = await this.http.get(`${this.apiUrl}/secure/documents/${docId}/view`, { responseType: 'blob' }).toPromise();
+            
+            if (!blob) throw new Error('Failed to fetch image blob');
 
-            if (!response.ok) {
-                throw new Error(`Failed to load image: ${response.statusText}`);
-            }
-
-            const blob = await response.blob();
             this.imageUrl = URL.createObjectURL(blob);
             this.isLoading = false;
 
@@ -817,42 +1043,42 @@ export class FilePreviewComponent implements OnInit, OnChanges {
 
     private async loadTextPreviewWithAuth() {
         try {
-            const docId = (this.file as any)?.documentId;
+            const docId = this.getDocId();
             if (!docId) throw new Error('Document ID not found');
 
-            const token = await this.getAuthToken();
+            // NEW: Use direct reactive content if available
+            if ((this.file as any)?.content !== undefined) {
+                console.log('[FilePreview] Using reactive content from sync');
+                this.textContent = (this.file as any).content;
+                this.isLoading = false;
+                return;
+            }
 
             // 1. Fetch document metadata first to get fresh signed URL
             let downloadUrl = `${this.apiUrl}/secure/documents/${docId}/view`;
-            let fetchHeaders: any = { 'Authorization': `Bearer ${token}` };
+            let isS3Url = false;
 
             try {
-                const metaResponse = await fetch(`${this.apiUrl}/secure/documents/${docId}`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-
-                if (metaResponse.ok) {
-                    const metaData = await metaResponse.json();
-                    if (metaData.success && metaData.document?.signedUrl) {
-                        console.log('[FilePreview] Using direct S3 signed URL for text');
-                        downloadUrl = metaData.document.signedUrl;
-                        fetchHeaders = {}; // No auth headers for S3
-                    }
+                const metaData: any = await this.http.get(`${this.apiUrl}/secure/documents/${docId}`).toPromise();
+                if (metaData?.success && metaData.document?.signedUrl) {
+                    console.log('[FilePreview] Using direct S3 signed URL for text');
+                    downloadUrl = metaData.document.signedUrl;
+                    isS3Url = true;
                 }
             } catch (e) {
                 console.warn('[FilePreview] Failed to fetch metadata, falling back to proxy');
             }
 
             // 2. Fetch Text content
-            const response = await fetch(downloadUrl, { headers: fetchHeaders });
-
-            if (!response.ok) {
-                // Try to read error message
-                const errorText = await response.text().catch(() => response.statusText);
-                throw new Error(errorText || response.statusText);
+            // Note: For S3 direct URLs, we use native fetch because HttpClient interceptor 
+            // will try to add ngrok headers which will trigger CORS on S3
+            if (isS3Url) {
+                const response = await fetch(downloadUrl);
+                this.textContent = await response.text();
+            } else {
+                this.textContent = await this.http.get(downloadUrl, { responseType: 'text' }).toPromise() || '';
             }
-
-            this.textContent = await response.text();
+            
             this.isLoading = false;
             console.log('[FilePreview] Text loaded successfully');
 
@@ -870,41 +1096,21 @@ export class FilePreviewComponent implements OnInit, OnChanges {
 
         try {
             const docId = (this.file as any)?.documentId;
-            if (!docId) {
-                throw new Error('Document ID not found');
-            }
+            if (!docId) throw new Error('Document ID not found');
 
-            console.log('[FilePreview] Loading DOCX preview for:', docId);
-
-            const token = await this.getAuthToken();
+            console.log('[FilePreview] Loading DOCX preview via HttpClient:', docId);
 
             // Fetch HTML preview from backend
-            const response = await fetch(
-                `${this.apiUrl}/secure/documents/${docId}/preview`,
-                {
-                    headers: {
-                        'Authorization': `Bearer ${token}`
-                    }
-                }
-            );
+            const htmlContent = await this.http.get(`${this.apiUrl}/secure/documents/${docId}/preview`, { responseType: 'text' }).toPromise();
 
-            if (!response.ok) {
-                let errorMsg = response.statusText;
-                try {
-                    const errorBody = await response.json();
-                    errorMsg = errorBody.message || response.statusText;
-                } catch (e) { }
-                throw new Error(`Failed to load preview: ${errorMsg}`);
-            }
+            if (!htmlContent) throw new Error('Empty preview content');
 
             // Get HTML content and create blob URL
-            const htmlContent = await response.text();
             const blob = new Blob([htmlContent], { type: 'text/html' });
             const blobUrl = URL.createObjectURL(blob);
 
             this.docxPreviewUrl = this.sanitizer.bypassSecurityTrustResourceUrl(blobUrl);
             this.docxLoading = false;
-
             console.log('[FilePreview] DOCX preview loaded successfully');
         } catch (error: any) {
             console.error('[FilePreview] DOCX preview load error:', error);
@@ -930,38 +1136,27 @@ export class FilePreviewComponent implements OnInit, OnChanges {
 
         try {
             const docId = (this.file as any)?.documentId;
-            console.log('[FilePreview] Loading Excel preview for:', docId);
+            if (!docId) throw new Error('No document ID available');
 
-            if (!docId) {
-                throw new Error('No document ID available');
-            }
-
-            // First, try to use the generated thumbnail/preview from S3
-            const previewUrl = (this.file as any)?.previewUrl || (this.file as any)?.thumbnailUrl;
+            // First, try to use the generated thumbnail/preview from S3 or local DB
+            let previewUrl = (this.file as any)?.previewUrl || (this.file as any)?.thumbnailUrl;
 
             if (previewUrl) {
-                console.log('[FilePreview] Using generated preview:', previewUrl);
+                previewUrl = this.documentService.getThumbnailUrl(previewUrl);
                 this.excelPreviewUrl = previewUrl;
                 this.excelLoading = false;
                 return;
             }
 
             // Fallback: Try to get thumbnail from local storage
-            const localThumbUrl = `${this.apiUrl}/api/thumbnails/${docId}.png`;
-            console.log('[FilePreview] Trying local thumbnail:', localThumbUrl);
-
-            // Test if thumbnail exists
-            const token = await this.getAuthToken();
-            const response = await fetch(localThumbUrl, {
-                method: 'HEAD',
-                headers: token ? { 'Authorization': `Bearer ${token}` } : {}
-            });
-
-            if (response.ok) {
+            const localThumbUrl = `${this.apiUrl.replace('/api', '')}/api/thumbnails/${docId}.png`;
+            
+            // Test if thumbnail exists using HttpClient
+            try {
+                await this.http.head(localThumbUrl).toPromise();
                 this.excelPreviewUrl = localThumbUrl;
                 this.excelLoading = false;
-            } else {
-                // No preview available
+            } catch (e) {
                 this.excelError = 'Spreadsheet preview not yet generated. Use Download to view.';
                 this.excelLoading = false;
             }
@@ -981,25 +1176,18 @@ export class FilePreviewComponent implements OnInit, OnChanges {
     private async loadPptPreviewWithAuth() {
         this.pptLoading = true;
         try {
-            const docId = (this.file as any)?.documentId;
+            const docId = this.getDocId();
             if (!docId) throw new Error('Document ID not found');
 
-            const token = await this.getAuthToken();
-            const metaResponse = await fetch(`${this.apiUrl}/secure/documents/${docId}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
+            const metaData: any = await this.http.get(`${this.apiUrl}/secure/documents/${docId}`).toPromise();
 
-            if (metaResponse.ok) {
-                const metaData = await metaResponse.json();
-                if (metaData.success && metaData.document?.signedUrl) {
-                    const signedUrl = metaData.document.signedUrl;
-
-                    // Use Google Docs Viewer for PPTX
-                    const viewerUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(signedUrl)}&embedded=true`;
-                    this.officePreviewUrl = this.sanitizer.bypassSecurityTrustResourceUrl(viewerUrl);
-                    this.isLoading = false;
-                    return;
-                }
+            if (metaData?.success && metaData.document?.signedUrl) {
+                const signedUrl = metaData.document.signedUrl;
+                // Use Google Docs Viewer for PPTX
+                const viewerUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(signedUrl)}&embedded=true`;
+                this.officePreviewUrl = this.sanitizer.bypassSecurityTrustResourceUrl(viewerUrl);
+                this.isLoading = false;
+                return;
             }
             throw new Error('Could not generate secure view link for PowerPoint');
         } catch (error: any) {
@@ -1012,35 +1200,44 @@ export class FilePreviewComponent implements OnInit, OnChanges {
 
     private async loadAudioPreviewWithAuth() {
         try {
-            const docId = (this.file as any)?.documentId;
+            const docId = this.getDocId();
             if (!docId) throw new Error('Document ID not found');
 
-            const token = await this.getAuthToken();
-            const metaResponse = await fetch(`${this.apiUrl}/secure/documents/${docId}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
+            console.log('[FilePreview] Fetching audio blob via proxy...');
+            const blob = await this.http.get(`${this.apiUrl}/secure/documents/${docId}/view`, { 
+                responseType: 'blob',
+                reportProgress: true
+            }).toPromise();
+            
+            if (!blob) throw new Error('Audio fetch failed');
 
-            if (metaResponse.ok) {
-                const metaData = await metaResponse.json();
-                if (metaData.success && metaData.document?.signedUrl) {
-                    this.audioUrl = this.sanitizer.bypassSecurityTrustResourceUrl(metaData.document.signedUrl);
-                    this.isLoading = false;
-                    return;
-                }
-            }
-
-            // Fallback to proxy
-            const response = await fetch(`${this.apiUrl}/secure/documents/${docId}/view`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (!response.ok) throw new Error('Proxy fetch failed');
-
-            const blob = await response.blob();
             this.audioUrl = this.sanitizer.bypassSecurityTrustResourceUrl(URL.createObjectURL(blob));
             this.isLoading = false;
         } catch (error: any) {
-            console.error('Audio load error:', error);
-            this.loadError = 'Failed to load audio';
+            console.error('[FilePreview] Audio load error:', error);
+            this.loadError = 'Failed to load audio. Please check your connection.';
+            this.isLoading = false;
+        }
+    }
+
+    private async loadVideoPreviewWithAuth() {
+        try {
+            const docId = this.getDocId();
+            if (!docId) throw new Error('Document ID not found');
+            
+            console.log('[FilePreview] Fetching video blob via proxy...');
+            const blob = await this.http.get(`${this.apiUrl}/secure/documents/${docId}/view`, { 
+                responseType: 'blob',
+                reportProgress: true
+            }).toPromise();
+            
+            if (!blob) throw new Error('Video fetch failed');
+
+            this.videoUrl = this.sanitizer.bypassSecurityTrustResourceUrl(URL.createObjectURL(blob));
+            this.isLoading = false;
+        } catch (error: any) {
+            console.error('[FilePreview] Video load error:', error);
+            this.loadError = 'Failed to load video. This could be due to file size or browser compatibility.';
             this.isLoading = false;
         }
     }
@@ -1068,6 +1265,112 @@ export class FilePreviewComponent implements OnInit, OnChanges {
         }
 
         throw new Error('Authentication required. Please log in again.');
+    }
+
+    // Permission Helpers
+    get isReadOnly(): boolean {
+        const currentUserId = this.authService.currentUser()?.uid;
+        const ownerId = (this.file as any)?.ownerUserId || (this.file as any)?.userId;
+
+        // Step 2: Check if currentUserId == ownerUserId
+        if (currentUserId && ownerId && (currentUserId === ownerId)) {
+            return false; // Owner is never read-only
+        }
+
+        // Step 3 & 4: Check if user has edit permission via shares
+        const sharePermission = (this.file as any)?._sharePermission;
+        if (sharePermission === 'edit') {
+            return false; // Has edit permission, so not read-only
+        }
+
+        return true; // Default to read-only for others
+    }
+
+    get canEdit(): boolean {
+        const currentUserId = this.authService.currentUser()?.uid;
+        const ownerId = (this.file as any)?.ownerUserId || (this.file as any)?.userId;
+        const sharePermission = (this.file as any)?._sharePermission;
+        const resourceId = (this.file as any)?.documentId;
+
+        // Temporary Debug Logging
+        console.log('[DEBUG] Permission Check:', {
+            currentUserId,
+            ownerUserId: ownerId,
+            sharePermission,
+            resourceId
+        });
+
+        // Step 2: Check if currentUserId == ownerUserId
+        // Ownership always grants full permission and skips shares check
+        if (currentUserId && ownerId && (currentUserId === ownerId)) {
+            console.log('[FilePreview] Edit permission granted: User is owner');
+            return true;
+        }
+
+        // Step 3 & 4: If user is not the owner, check share permission
+        // Correct order: only allow edit if permission is explicitly "edit"
+        if (sharePermission === 'edit') {
+            console.log('[FilePreview] Edit permission granted via share');
+            return true;
+        }
+
+        // Fallback for new uploads (if uploader is the owner, caught above; 
+        // if uploader is not owner, they shouldn't be editing unless shared)
+        const status = (this.file as any)?.status;
+        if (status === 'uploading' || status === 'processing') {
+            return true;
+        }
+
+        console.log('[FilePreview] Edit permission denied');
+        return false;
+    }
+
+    /**
+     * Requirement: Only show the error message "You do not have permission to edit this document"
+     * when: 1. user is NOT the owner, 2. no valid share exists, 3. permission is not "edit"
+     */
+    get showPermissionError(): boolean {
+        const currentUserId = this.authService.currentUser()?.uid;
+        const ownerId = (this.file as any)?.ownerUserId || (this.file as any)?.userId;
+
+        // If user is owner, never show this error
+        if (currentUserId && ownerId && (currentUserId === ownerId)) {
+            return false;
+        }
+
+        // Check if a valid edit share exists
+        const sharePermission = (this.file as any)?._sharePermission;
+        const hasEditShare = sharePermission === 'edit';
+
+        // Show error if NOT owner AND does NOT have edit share
+        return !hasEditShare;
+    }
+
+    get permissionErrorMessage(): string {
+        return 'You do not have permission to edit this document.';
+    }
+
+    onContentChange() {
+        this.hasChanges = true;
+    }
+
+    async onSave() {
+        if (!this.file || this.isSaving || !this.hasChanges) return;
+
+        const docId = (this.file as any).documentId;
+        if (!docId) return;
+
+        this.isSaving = true;
+        try {
+            await this.documentService.saveDocumentContent(docId, this.textContent);
+            this.hasChanges = false;
+            console.log('✅ Changes saved successfully');
+        } catch (error) {
+            console.error('❌ Failed to save changes:', error);
+            alert('Failed to save changes. Please try again.');
+        } finally {
+            this.isSaving = false;
+        }
     }
 
     private getDownloadUrl(): string {
@@ -1129,9 +1432,10 @@ export class FilePreviewComponent implements OnInit, OnChanges {
     }
 
     isText(): boolean {
-        const textTypes = ['txt', 'md', 'json', 'csv', 'xml', 'html', 'css', 'js', 'ts', 'py', 'log'];
+        const textTypes = ['txt', 'md', 'json', 'xml', 'html', 'css', 'js', 'ts', 'py', 'log'];
         const type = this.file?.fileType?.toLowerCase() || '';
-        return textTypes.includes(type) || type.startsWith('text/');
+        const isCsv = type === 'csv' || type === 'text/csv' || this.file?.fileName?.toLowerCase().endsWith('.csv');
+        return (textTypes.includes(type) || type.startsWith('text/')) && !isCsv;
     }
 
     isDocx(): boolean {
@@ -1144,13 +1448,15 @@ export class FilePreviewComponent implements OnInit, OnChanges {
     }
 
     isExcel(): boolean {
-        const excelTypes = ['xlsx', 'xls', 'xlsm', 'xlsb', 'ods'];
+        const excelTypes = ['xlsx', 'xls', 'xlsm', 'xlsb', 'ods', 'csv'];
         const type = this.file?.fileType?.toLowerCase() || '';
         return excelTypes.includes(type) ||
             type.includes('spreadsheet') ||
             type.includes('excel') ||
+            type.includes('csv') ||
             type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
-            type === 'application/vnd.ms-excel';
+            type === 'application/vnd.ms-excel' ||
+            type === 'text/csv';
     }
 
     isPpt(): boolean {
@@ -1165,13 +1471,25 @@ export class FilePreviewComponent implements OnInit, OnChanges {
         return types.includes(type) || type.startsWith('audio/');
     }
 
-    getSpreadsheetFile(): any {
+    isVideo(): boolean {
+        const types = ['mp4', 'webm', 'ogg', 'mov', 'avi', 'mkv'];
+        const type = this.file?.fileType?.toLowerCase() || '';
+        return types.includes(type) || type.startsWith('video/');
+    }
+
+    private getDocId(): string | null {
         if (!this.file) return null;
+        return (this.file as any).documentId || (this.file as any).id || null;
+    }
+
+    getSpreadsheetFile(): any {
+        const docId = this.getDocId();
+        if (!docId) return null;
         return {
-            documentId: (this.file as any).documentId || (this.file as any).id,
-            fileName: this.file.fileName,
-            fileType: this.file.fileType,
-            fileSize: this.file.fileSize
+            documentId: docId,
+            fileName: this.file?.fileName,
+            fileType: this.file?.fileType,
+            fileSize: this.file?.fileSize
         };
     }
 
@@ -1183,6 +1501,7 @@ export class FilePreviewComponent implements OnInit, OnChanges {
         if (this.isExcel()) return '📊';
         if (this.isPpt()) return '📽️';
         if (this.isAudio()) return '🎵';
+        if (this.isVideo()) return '🎬';
         if (type === 'txt') return '📃';
         if (this.isImage()) return '🖼️';
         return '📁';

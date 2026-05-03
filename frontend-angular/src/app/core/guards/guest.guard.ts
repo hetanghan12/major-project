@@ -21,7 +21,13 @@ export const guestGuard: CanActivateFn = (route, state) => {
                     if (!authService.isAuthenticated()) {
                         resolve(true);
                     } else {
-                        router.navigate(['/dashboard']);
+                        const user = authService.currentUser();
+                        const role = user?.role?.toLowerCase();
+                        if (role === 'admin' || user?.email === 'admin@cloudspace.com') {
+                            router.navigate(['/admin/dashboard']);
+                        } else {
+                            router.navigate(['/dashboard']);
+                        }
                         resolve(false);
                     }
                 }
@@ -33,7 +39,13 @@ export const guestGuard: CanActivateFn = (route, state) => {
         return true;
     }
 
-    // Already logged in, redirect to dashboard
-    router.navigate(['/dashboard']);
+    // Already logged in, redirect based on role
+    const user = authService.currentUser();
+    const role = user?.role?.toLowerCase();
+    if (role === 'admin' || user?.email === 'admin@cloudspace.com') {
+        router.navigate(['/admin/dashboard']);
+    } else {
+        router.navigate(['/dashboard']);
+    }
     return false;
 };

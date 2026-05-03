@@ -3,10 +3,10 @@ import { CommonModule } from '@angular/common';
 import { AdminService } from '../../core/services/admin.service';
 
 @Component({
-    selector: 'app-admin-audit-logs',
-    standalone: true,
-    imports: [CommonModule],
-    template: `
+  standalone: true,
+  selector: 'app-admin-audit-logs',
+  imports: [CommonModule],
+  template: `
     <div class="header">
       <h1>Audit Logs</h1>
       <p>Security and activity tracking (Last 50 events)</p>
@@ -53,7 +53,7 @@ import { AdminService } from '../../core/services/admin.service';
       </div>
     </ng-template>
   `,
-    styles: [`
+  styles: [`
     :host { display: block; }
     .header h1 { font-size: 28px; font-weight: 700; margin: 0 0 4px; color: #1f2937; }
     .header p { color: #6b7280; font-size: 15px; margin: 0 0 2rem; }
@@ -84,30 +84,30 @@ import { AdminService } from '../../core/services/admin.service';
   `]
 })
 export class AdminAuditLogsComponent implements OnInit {
-    private adminService = inject(AdminService);
-    logs: any[] = [];
-    loading = true;
+  private adminService = inject(AdminService);
+  logs: any[] = [];
+  loading = true;
 
-    ngOnInit() {
-        this.loadLogs();
-    }
+  ngOnInit() {
+    this.loadLogs();
+  }
 
-    async loadLogs() {
-        try {
-            this.loading = true;
-            const res = await this.adminService.getAuditLogs();
-            this.logs = res.data || [];
-        } catch (err) {
-            console.error('Failed to load logs', err);
-        } finally {
-            this.loading = false;
-        }
+  async loadLogs() {
+    try {
+      this.loading = true;
+      const res = await this.adminService.getAuditLogs();
+      this.logs = res.data || [];
+    } catch (err) {
+      console.error('Failed to load logs', err);
+    } finally {
+      this.loading = false;
     }
+  }
 
-    getEventClass(event: string) {
-        if (event.includes('LOGIN') || event.includes('USER')) return 'auth';
-        if (event.includes('SETTING') || event.includes('DELETE')) return 'sys';
-        if (event.includes('LOCK') || event.includes('UNLOCK')) return 'sec';
-        return '';
-    }
+  getEventClass(event: string) {
+    if (event.includes('LOGIN') || event.includes('USER')) return 'auth';
+    if (event.includes('SETTING') || event.includes('DELETE')) return 'sys';
+    if (event.includes('LOCK') || event.includes('UNLOCK')) return 'sec';
+    return '';
+  }
 }

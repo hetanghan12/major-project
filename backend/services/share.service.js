@@ -14,13 +14,87 @@
 const { getFirestore } = require('../config/firebase.config');
 const { getAuth } = require('../config/firebase.config');
 const { v4: uuidv4 } = require('uuid');
+const { createNotification } = require('./notification.service');
+const { sendShareEmail } = require('./email.service');
 
 const SHARES_COLLECTION = 'shares';
-const DOCUMENTS_COLLECTION = 'documents';
+const DOCUMENTS_COLLECTION = 'files';
 const USERS_COLLECTION = 'users';
 
 // Maximum folder depth for inherited permission traversal
 const MAX_FOLDER_DEPTH = 10;
+
+async function getResource(resourceId) {
+    console.log(`[DEBUG] getResource: Searching for resourceId="${resourceId}"`);
+    const db = getFirestore();
+    
+    // Try 'files' first by doc ID
+    let docRef = db.collection('files').doc(resourceId);
+    let docSnap = await docRef.get();
+    if (docSnap.exists) {
+        return docSnap;
+    }
+
+    // Try 'documents' by doc ID
+    docRef = db.collection('documents').doc(resourceId);
+    docSnap = await docRef.get();
+    if (docSnap.exists) {
+        return docSnap;
+    }
+
+    // FALLBACK: Query by "documentId" field in "files"
+    let querySnap = await db.collection('files').where('documentId', '==', resourceId).limit(1).get();
+    if (!querySnap.empty) {
+        return querySnap.docs[0];
+    }
+
+    // FALLBACK: Query by "documentId" field in "documents"
+    querySnap = await db.collection('documents').where('documentId', '==', resourceId).limit(1).get();
+    if (!querySnap.empty) {
+        return querySnap.docs[0];
+    }
+
+    return docSnap; 
+}
+
+/**
+ * Optimized Batch Resource Lookup
+ * Fetches multiple resources in 2-4 read operations total instead of N*4.
+ */
+async function getBatchResources(resourceIds) {
+    if (!resourceIds || resourceIds.length === 0) return new Map();
+    
+    const db = getFirestore();
+    const uniqueIds = [...new Set(resourceIds.filter(id => !!id))];
+    const results = new Map();
+
+    // Firestore 'in' query supports up to 30 items
+    const chunks = [];
+    for (let i = 0; i < uniqueIds.length; i += 30) {
+        chunks.push(uniqueIds.slice(i, i + 30));
+    }
+
+    for (const chunk of chunks) {
+        const [filesSnap, docsSnap] = await Promise.all([
+            db.collection('files').where('documentId', 'in', chunk).get(),
+            db.collection('documents').where('documentId', 'in', chunk).get()
+        ]);
+
+        filesSnap.forEach(doc => results.set(doc.data().documentId || doc.id, doc.data()));
+        docsSnap.forEach(doc => results.set(doc.data().documentId || doc.id, doc.data()));
+
+        // Also check by document ID directly for legacy records
+        const [filesIdSnap, docsIdSnap] = await Promise.all([
+            db.collection('files').where('__name__', 'in', chunk).get(),
+            db.collection('documents').where('__name__', 'in', chunk).get()
+        ]);
+
+        filesIdSnap.forEach(doc => results.set(doc.id, doc.data()));
+        docsIdSnap.forEach(doc => results.set(doc.id, doc.data()));
+    }
+
+    return results;
+}
 
 // =============================================================================
 // SHARE CRUD
@@ -39,13 +113,15 @@ async function createShares(ownerUserId, ownerEmail, resourceId, recipients, mes
     const db = getFirestore();
 
     // 1. Verify the resource exists and belongs to the owner
-    const docRef = await db.collection(DOCUMENTS_COLLECTION).doc(resourceId).get();
+    const docRef = await getResource(resourceId);
     if (!docRef.exists) {
         throw { status: 404, message: 'Resource not found' };
     }
 
     const doc = docRef.data();
-    if (doc.userId !== ownerUserId) {
+    const actualOwnerId = doc.ownerUserId || doc.userId;
+    
+    if (actualOwnerId !== ownerUserId) {
         throw { status: 403, message: 'Only the owner can share this resource' };
     }
 
@@ -121,6 +197,26 @@ async function createShares(ownerUserId, ownerEmail, resourceId, recipients, mes
         await db.collection(SHARES_COLLECTION).doc(shareId).set(shareData);
         console.log(`✅ Share created: ${resourceType} "${doc.fileName}" → ${email} (${shareStatus})`);
 
+        // 7. Trigger In-App Notification if recipient is an existing user
+        if (recipientUserId && shareStatus === 'active') {
+            createNotification({
+                userId: recipientUserId,
+                type: 'share',
+                message: `"${doc.fileName}" (${resourceType}) has been shared with you by ${ownerEmail}.`,
+                fileId: resourceId
+            }).catch(e => console.error('Failed to create share notification:', e));
+        }
+
+        // 8. Trigger Automated Share Email (Always send to the email address)
+        sendShareEmail({
+            recipientEmail: email,
+            ownerEmail,
+            fileName: doc.fileName,
+            resourceType,
+            permission,
+            message
+        }).catch(e => console.error('Failed to send share email notification:', e));
+
         results.push({
             ...shareData,
             fileName: doc.fileName,
@@ -139,51 +235,61 @@ async function createShares(ownerUserId, ownerEmail, resourceId, recipients, mes
 async function getSharedWithMe(userId) {
     const db = getFirestore();
 
-    // Optimized with limit(20) as per platform requirements
+    console.log(`[DEBUG] Fetching shared-with-me for UID: ${userId}`);
     const snapshot = await db.collection(SHARES_COLLECTION)
         .where('recipientUserId', '==', userId)
-        .where('status', '==', 'active')
-        .limit(20)
+        .limit(50) 
         .get();
 
     if (snapshot.empty) return [];
 
+    let rawShares = snapshot.docs.map(doc => ({ ref: doc.ref, ...doc.data() }));
+    
+    // Filter active and non-revoked
+    rawShares = rawShares.filter(s => s.status === 'active' && !s.revokedAt && s.resourceId && s.ownerUserId);
+
+    // BATCH FETCH DOCUMENTS
+    const docIds = rawShares.map(s => s.resourceId);
+    const docMap = await getBatchResources(docIds);
+
+    // BATCH FETCH OWNERS
+    const ownerIds = [...new Set(rawShares.map(s => String(s.ownerUserId)))];
+    const ownersMap = new Map();
+    
+    const userChunks = [];
+    for (let i = 0; i < ownerIds.length; i += 30) {
+        userChunks.push(ownerIds.slice(i, i + 30));
+    }
+    for (const chunk of userChunks) {
+        const usersSnap = await db.collection(USERS_COLLECTION).where('__name__', 'in', chunk).get();
+        usersSnap.forEach(u => ownersMap.set(u.id, u.data()));
+    }
+
     const shares = [];
-    for (const shareDoc of snapshot.docs) {
+    for (const share of rawShares) {
         try {
-            const share = shareDoc.data();
-
-            // Filter status in-memory (avoids composite index)
-            if (share.status !== 'active') continue;
-
             // Check expiration
             if (share.expiresAt && new Date(share.expiresAt) < new Date()) {
-                await shareDoc.ref.update({ status: 'revoked', revokedAt: new Date().toISOString() });
+                await share.ref.update({ status: 'revoked', revokedAt: new Date().toISOString() });
                 continue;
             }
 
-            // Safeguard against missing resourceId or ownerUserId
-            if (!share.resourceId) continue;
-            if (!share.ownerUserId) continue;
+            const docData = docMap.get(share.resourceId);
+            if (!docData || docData.isTrashed) continue;
 
-            // Enrich with document info
-            const docSnap = await db.collection(DOCUMENTS_COLLECTION).doc(String(share.resourceId)).get();
-            if (!docSnap.exists || docSnap.data().isTrashed) continue;
-
-            const docData = docSnap.data();
-
-            // Get owner info
-            const ownerSnap = await db.collection(USERS_COLLECTION).doc(String(share.ownerUserId)).get();
-            const ownerData = ownerSnap.exists ? ownerSnap.data() : {};
+            const ownerData = ownersMap.get(String(share.ownerUserId)) || {};
 
             shares.push({
                 ...share,
-                fileName: docData.fileName,
-                fileType: docData.fileType,
-                fileSize: docData.fileSize,
+                fileName: docData.fileName || docData.name || 'Untitled',
+                fileType: docData.fileType || 'unknown',
+                fileSize: docData.fileSize || 0,
                 thumbnailUrl: docData.thumbnailUrl || docData.previewUrl || null,
-                thumbnailStatus: docData.thumbnailStatus || 'processing',
+                thumbnailStatus: docData.thumbnailStatus || 'ready',
                 isFolder: docData.isFolder || false,
+                vectorCount: docData.vectorCount || 0,
+                updatedAt: docData.updatedAt || docData.uploadedAt || share.sharedAt,
+                lastEditedBy: docData.lastEditedBy || docData.ownerUserId || docData.userId,
                 ownerName: ownerData.displayName || ownerData.email || 'Unknown',
                 ownerEmail: ownerData.email || null
             });
@@ -193,9 +299,7 @@ async function getSharedWithMe(userId) {
         }
     }
 
-    // Sort in-memory to bypass Firebase composite index requirements
     shares.sort((a, b) => new Date(b.sharedAt || 0) - new Date(a.sharedAt || 0));
-
     return shares;
 }
 
@@ -207,32 +311,31 @@ async function getSharedWithMe(userId) {
 async function getSharedByMe(userId) {
     const db = getFirestore();
 
+    console.log(`[DEBUG] Fetching shared-by-me for UID: ${userId}`);
     const snapshot = await db.collection(SHARES_COLLECTION)
         .where('ownerUserId', '==', userId)
-        .limit(20)
+        .limit(50)
         .get();
 
     if (snapshot.empty) return [];
 
-    // Group by resourceId
-    const grouped = {};
-    for (const shareDoc of snapshot.docs) {
-        try {
-            const share = shareDoc.data();
+    const rawShares = snapshot.docs.map(doc => doc.data());
+    const docIds = rawShares.map(s => s.resourceId);
+    const docMap = await getBatchResources(docIds);
 
-            // Safeguard against missing resourceId
+    const grouped = {};
+    for (const share of rawShares) {
+        try {
             if (!share.resourceId) continue;
 
             if (!grouped[share.resourceId]) {
-                // Get document info
-                const docSnap = await db.collection(DOCUMENTS_COLLECTION).doc(String(share.resourceId)).get();
-                const docData = docSnap.exists ? docSnap.data() : {};
+                const docData = docMap.get(share.resourceId) || {};
 
                 grouped[share.resourceId] = {
                     resourceId: share.resourceId,
                     resourceType: share.resourceType,
-                    fileName: docData.fileName || 'Deleted file',
-                    fileType: docData.fileType || null,
+                    fileName: docData.fileName || docData.name || 'Untitled',
+                    fileType: docData.fileType || 'unknown',
                     isFolder: docData.isFolder || false,
                     recipients: []
                 };
@@ -389,40 +492,69 @@ async function revokeAllSharesForResource(resourceId, ownerUserId) {
 async function checkAccess(userId, documentId, requiredPermission = null) {
     const db = getFirestore();
 
-    // 1. Get the document
-    const docSnap = await db.collection(DOCUMENTS_COLLECTION).doc(documentId).get();
+    // 1. Get the document (Check BOTH collections)
+    const docSnap = await getResource(documentId);
     if (!docSnap.exists) {
+        console.warn(`[DEBUG] checkAccess: Document NOT FOUND in either collection: ${documentId}`);
         return { allowed: false, reason: 'Document not found', permission: null, isOwner: false };
     }
 
     const doc = docSnap.data();
+    const ownerUserId = doc.ownerUserId || doc.userId;
 
-    // 2. Owner always has full access
-    if (doc.userId === userId) {
+    console.log('[DEBUG] checkAccess: Found document. Analyzing access...', {
+        requestedBy: userId,
+        ownedBy: ownerUserId,
+        collection: docSnap.ref.parent.id
+    });
+
+    // 2. Step 2: Check if currentUserId == ownerUserId
+    if (ownerUserId === userId) {
+        console.log('[DEBUG] checkAccess - Access Granted: Owner');
         return { allowed: true, reason: 'owner', permission: 'owner', isOwner: true };
     }
 
-    // 3. Check direct share
-    const directShare = await db.collection(SHARES_COLLECTION)
+    // 3. Step 3: If user is not the owner, query "shares" collection
+    // Filters: resourceId, recipientUserId, revokedAt == null
+    const shareQuery = await db.collection(SHARES_COLLECTION)
         .where('resourceId', '==', documentId)
         .where('recipientUserId', '==', userId)
-        .where('status', '==', 'active')
+        .where('revokedAt', '==', null)
         .limit(1)
         .get();
 
-    if (!directShare.empty) {
-        const share = directShare.docs[0].data();
-        // Check expiration
-        if (share.expiresAt && new Date(share.expiresAt) < new Date()) {
-            // Auto-revoke
-            await directShare.docs[0].ref.update({ status: 'revoked', revokedAt: new Date().toISOString() });
+    // 4. Step 4: Validate share record and permission
+    if (!shareQuery.empty) {
+        const shareDoc = shareQuery.docs[0];
+        const share = shareDoc.data();
+
+        console.log('[DEBUG] Backend Permission Check - Direct Share Found:', {
+            shareId: shareDoc.id,
+            permission: share.permission,
+            status: share.status,
+            expiresAt: share.expiresAt
+        });
+
+        // Safety check: even if revokedAt is null, status might be 'revoked' (legacy sync)
+        if (share.status === 'revoked') {
+            // Keep going to folder check if direct share is revoked
         } else {
+            // Check expiration
+            if (share.expiresAt && new Date(share.expiresAt) < new Date()) {
+                await shareDoc.ref.update({ status: 'revoked', revokedAt: new Date().toISOString() });
+                // Expired shares are denied access
+                return { allowed: false, reason: 'Share expired', permission: null, isOwner: false };
+            }
+
             // Check required permission
             if (requiredPermission && !hasPermission(share.permission, requiredPermission)) {
+                console.log('[DEBUG] Backend Permission Check - Access Denied (Direct Share): Insufficient Permission');
                 return { allowed: false, reason: 'Insufficient permission', permission: share.permission, isOwner: false };
             }
+            
             // Update last accessed
-            await directShare.docs[0].ref.update({ lastAccessedAt: new Date().toISOString() });
+            await shareDoc.ref.update({ lastAccessedAt: new Date().toISOString() });
+            console.log(`[DEBUG] Backend Permission Check - Access Granted (Direct Share): ${share.permission}`);
             return { allowed: true, reason: 'direct_share', permission: share.permission, isOwner: false };
         }
     }
@@ -435,24 +567,32 @@ async function checkAccess(userId, documentId, requiredPermission = null) {
         const folderShare = await db.collection(SHARES_COLLECTION)
             .where('resourceId', '==', parentId)
             .where('recipientUserId', '==', userId)
-            .where('status', '==', 'active')
+            .where('revokedAt', '==', null)
             .where('resourceType', '==', 'folder')
             .limit(1)
             .get();
 
         if (!folderShare.empty) {
             const share = folderShare.docs[0].data();
+            
+            // Check revocation
+            if (share.status === 'revoked' || share.revokedAt) continue;
+
             // Check expiration
-            if (!share.expiresAt || new Date(share.expiresAt) >= new Date()) {
-                if (requiredPermission && !hasPermission(share.permission, requiredPermission)) {
-                    return { allowed: false, reason: 'Insufficient folder permission', permission: share.permission, isOwner: false };
-                }
-                return { allowed: true, reason: 'folder_inheritance', permission: share.permission, isOwner: false };
+            const isExpired = share.expiresAt && new Date(share.expiresAt) < new Date();
+            if (isExpired) {
+                await folderShare.docs[0].ref.update({ status: 'revoked', revokedAt: new Date().toISOString() });
+                continue;
             }
+
+            if (requiredPermission && !hasPermission(share.permission, requiredPermission)) {
+                return { allowed: false, reason: 'Insufficient folder permission', permission: share.permission, isOwner: false };
+            }
+            return { allowed: true, reason: 'folder_inheritance', permission: share.permission, isOwner: false };
         }
 
-        // Move up to parent
-        const parentSnap = await db.collection(DOCUMENTS_COLLECTION).doc(parentId).get();
+        // Move up to parent (Check BOTH collections)
+        const parentSnap = await getResource(parentId);
         if (!parentSnap.exists) break;
         parentId = parentSnap.data().parentFolderId || null;
         depth++;
@@ -506,6 +646,15 @@ async function activatePendingShares(userId, email) {
             status: 'active',
             activatedAt: new Date().toISOString()
         });
+
+        // Trigger notification for the newly registered user
+        const share = doc.data();
+        createNotification({
+            userId,
+            type: 'share',
+            message: `A file has been shared with you. Check your "Shared With Me" tab.`,
+            fileId: share.resourceId
+        }).catch(e => console.error('Failed to create pending share notification:', e));
     });
 
     await batch.commit();
@@ -580,16 +729,20 @@ async function getAccessibleNamespacesForAI(userId) {
         const documentIds = new Set(data.directFileIds);
 
         if (data.folderIds.size > 0) {
-            const docsSnap = await db.collection(DOCUMENTS_COLLECTION)
-                .where('userId', '==', ownerId)
-                .get();
+            // Query BOTH collections for folder contents
+            const [filesSnap, docsSnap] = await Promise.all([
+                db.collection('files').where('userId', '==', ownerId).get(),
+                db.collection('documents').where('userId', '==', ownerId).get()
+            ]);
 
             const allDocs = [];
-            docsSnap.docs.forEach(d => {
-                const docData = d.data();
-                if (!docData.isTrashed) {
-                    allDocs.push({ id: d.id, parentFolderId: docData.parentFolderId || null });
-                }
+            [filesSnap, docsSnap].forEach(snap => {
+                snap.docs.forEach(d => {
+                    const docData = d.data();
+                    if (!docData.isTrashed) {
+                        allDocs.push({ id: d.id, parentFolderId: docData.parentFolderId || null });
+                    }
+                });
             });
 
             const childrenMap = {};

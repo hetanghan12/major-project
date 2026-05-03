@@ -30,11 +30,12 @@ function getCategory(fileType, fileName) {
     const mime = (fileType || '').toLowerCase();
     const name = (fileName || '').toLowerCase();
 
-    if (mime.includes('image/') || name.match(/\.(jpg|jpeg|png|gif|webp|svg)$/)) return 'image';
-    if (mime.includes('video/') || name.match(/\.(mp4|avi|mov|mkv)$/)) return 'video';
-    if (mime.includes('audio/') || name.match(/\.(mp3|wav|ogg)$/)) return 'audio';
-    if (mime.includes('pdf') || mime.includes('document') || mime.includes('text/') || mime.includes('msword') || name.match(/\.(pdf|doc|docx|txt|rtf|xls|xlsx|csv)$/)) return 'documents';
-    return 'other';
+    if (mime.includes('image/') || name.match(/\.(jpg|jpeg|png|gif|webp|svg)$/)) return 'media';
+    if (mime.includes('video/') || name.match(/\.(mp4|avi|mov|mkv)$/)) return 'media';
+    if (mime.includes('audio/') || name.match(/\.(mp3|wav|ogg)$/)) return 'media';
+    if (mime.includes('pdf') || mime.includes('document') || mime.includes('text/') || mime.includes('msword') || mime.includes('presentation') || mime.includes('spreadsheet') || 
+        name.match(/\.(pdf|doc|docx|txt|rtf|xls|xlsx|csv|tsv|ppt|pptx|pot|potx|md|json|xml)$/)) return 'documents';
+    return 'others';
 }
 
 /**
@@ -53,10 +54,12 @@ async function incrementGlobalStats(updates = {}) {
         if (updates.totalStorageUsed) incrementData.totalStorageUsed = FieldValue.increment(updates.totalStorageUsed);
         if (updates.uploadsToday) incrementData.uploadsToday = FieldValue.increment(updates.uploadsToday);
         if (updates.aiRequestsToday) incrementData.aiRequestsToday = FieldValue.increment(updates.aiRequestsToday);
+        if (updates.totalTokens) incrementData.totalTokens = FieldValue.increment(updates.totalTokens);
+        if (updates.estimatedCost) incrementData.estimatedCost = FieldValue.increment(updates.estimatedCost);
 
         // Handle Type Distribution Increments
         if (updates.type) {
-            const category = updates.type; // image, video, audio, documents, other
+            const category = updates.type; // documents, media, others
             const size = updates.totalStorageUsed || 0;
             incrementData[`typeDistribution.${category}.count`] = FieldValue.increment(1);
             if (size) incrementData[`typeDistribution.${category}.bytes`] = FieldValue.increment(size);
@@ -85,6 +88,8 @@ async function incrementDailyStats(updates = {}) {
         if (updates.aiRequests) incrementData.aiRequests = FieldValue.increment(updates.aiRequests);
         if (updates.newUsers) incrementData.newUsers = FieldValue.increment(updates.newUsers);
         if (updates.storageUsed) incrementData.storageUsed = FieldValue.increment(updates.storageUsed);
+        if (updates.tokens) incrementData.tokens = FieldValue.increment(updates.tokens);
+        if (updates.cost) incrementData.cost = FieldValue.increment(updates.cost);
 
         await ref.set(incrementData, { merge: true });
         cachedDailyStats = {};
@@ -109,11 +114,11 @@ async function getGlobalStats() {
         } else {
             cachedGlobalStats = {
                 totalUsers: 0, totalFiles: 0, totalDocuments: 0, totalStorageUsed: 0,
-                uploadsToday: 0, aiRequestsToday: 0,
+                uploadsToday: 0, aiRequestsToday: 0, totalTokens: 0, estimatedCost: 0,
                 typeDistribution: {
-                    documents: { count: 0, bytes: 0 }, image: { count: 0, bytes: 0 },
-                    video: { count: 0, bytes: 0 }, audio: { count: 0, bytes: 0 },
-                    other: { count: 0, bytes: 0 }
+                    documents: { count: 0, bytes: 0 },
+                    media: { count: 0, bytes: 0 },
+                    others: { count: 0, bytes: 0 }
                 }
             };
         }
@@ -193,16 +198,39 @@ async function getUnifiedDashboard() {
         let totalStorageBytes = 0;
         const typeDistribution = {
             documents: { count: 0, bytes: 0 },
-            image: { count: 0, bytes: 0 },
-            video: { count: 0, bytes: 0 },
-            audio: { count: 0, bytes: 0 },
-            other: { count: 0, bytes: 0 }
+            media: { count: 0, bytes: 0 },
+            others: { count: 0, bytes: 0 }
         };
 
         try {
-            const docsSnap = await db.collection('documents').get();
-            docsSnap.forEach(doc => {
-                const data = doc.data();
+            const [filesSnap, docsSnap] = await Promise.all([
+                db.collection('files').get(),
+                db.collection('documents').get()
+            ]);
+
+            // DEDUPLICATION: Prevent double counting across collections
+            const uniqueFiles = new Map();
+
+            const collectUniqueFiles = (snap) => {
+                snap.forEach(doc => {
+                    const data = doc.data();
+                    const docId = data.documentId || data.fileId || doc.id;
+
+                    // Skip analytics-only ghost records
+                    if (!data.documentId && !data.uploadId && data.storageProvider) return;
+
+                    if (!uniqueFiles.has(docId)) {
+                        uniqueFiles.set(docId, data);
+                    } else if (data.status === 'completed') {
+                        uniqueFiles.set(docId, data);
+                    }
+                });
+            };
+
+            collectUniqueFiles(filesSnap);
+            collectUniqueFiles(docsSnap);
+
+            uniqueFiles.forEach((data) => {
                 if (data.isFolder) return;
 
                 const size = data.fileSize || 0;
@@ -214,8 +242,8 @@ async function getUnifiedDashboard() {
                     typeDistribution[category].count++;
                     typeDistribution[category].bytes += size;
                 } else {
-                    typeDistribution.other.count++;
-                    typeDistribution.other.bytes += size;
+                    typeDistribution.others.count++;
+                    typeDistribution.others.bytes += size;
                 }
             });
         } catch (docsErr) {
@@ -293,20 +321,45 @@ async function seedDashboardStats() {
         const usersResult = await auth.listUsers(1000);
         const totalUsers = usersResult.users.length;
 
-        // 2. Scan Documents for storage and distribution
-        const docsSnap = await db.collection('documents').get();
+        // 2. Scan BOTH Collections for storage and distribution (Migration Support)
+        const [filesSnap, documentsOldSnap] = await Promise.all([
+            db.collection('files').get(),
+            db.collection('documents').get()
+        ]);
+        
         let totalDocs = 0;
         let totalStorage = 0;
         let typeDistribution = {
-            documents: { count: 0, bytes: 0 }, image: { count: 0, bytes: 0 },
-            video: { count: 0, bytes: 0 }, audio: { count: 0, bytes: 0 },
-            other: { count: 0, bytes: 0 }
+            documents: { count: 0, bytes: 0 },
+            media: { count: 0, bytes: 0 },
+            others: { count: 0, bytes: 0 }
         };
 
         const dailyStatsMap = {}; // To populate chart history
 
-        docsSnap.forEach(doc => {
-            const data = doc.data();
+        // DEDUPLICATION: Prevent double counting across collections
+        const uniqueFiles = new Map();
+
+        const collectItems = (snap) => {
+            snap.forEach(doc => {
+                const data = doc.data();
+                const docId = data.documentId || data.fileId || doc.id;
+
+                // Skip analytics-only ghost records
+                if (!data.documentId && !data.uploadId && data.storageProvider) return;
+
+                if (!uniqueFiles.has(docId)) {
+                    uniqueFiles.set(docId, data);
+                } else if (data.status === 'completed') {
+                    uniqueFiles.set(docId, data);
+                }
+            });
+        };
+
+        collectItems(filesSnap);
+        collectItems(documentsOldSnap);
+
+        uniqueFiles.forEach((data) => {
             if (data.isFolder) return;
 
             const size = data.fileSize || 0;

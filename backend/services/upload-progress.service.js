@@ -1,3 +1,6 @@
+const path = require('path');
+const fs = require('fs');
+
 /**
  * UPLOAD PROGRESS SERVICE
  * ========================
@@ -41,14 +44,16 @@ const sseClients = new Map();
  * @param {string} userId - User ID
  * @param {string} fileName - Original file name
  * @param {number} totalBytes - Total file size in bytes
+ * @param {string} localFilePath - Path to temporary file on disk (optional)
  * @returns {Object} Progress tracker
  */
-function createUploadProgress(uploadId, userId, fileName, totalBytes) {
+function createUploadProgress(uploadId, userId, fileName, totalBytes, localFilePath = null) {
     const progress = {
         uploadId,
         userId,
         fileName,
         totalBytes,
+        localFilePath, // Added for cleanup on cancel
         uploadedBytes: 0,
         percent: 0,
         status: 'pending',
@@ -200,6 +205,54 @@ function failUpload(uploadId, error) {
 }
 
 /**
+ * Mark upload as cancelled
+ * 
+ * @param {string} uploadId - Upload ID
+ */
+function cancelUpload(uploadId) {
+    const progress = uploadProgressStore.get(uploadId);
+    if (!progress) return null;
+
+    progress.status = 'cancelled';
+    progress.stage = 'cancelled';
+    progress.cancelledAt = new Date().toISOString();
+
+    // NEW: Cleanup local temporary file if it exists
+    if (progress.localFilePath && fs.existsSync(progress.localFilePath)) {
+        try {
+            fs.unlinkSync(progress.localFilePath);
+            console.log(`   🧹 [Cleanup] Deleted temporary file for cancelled upload: ${progress.localFilePath}`);
+        } catch (err) {
+            console.error(`   ⚠️ [Cleanup] Failed to delete temporary file: ${err.message}`);
+        }
+    }
+
+    uploadProgressStore.set(uploadId, progress);
+    broadcastProgress(uploadId, progress);
+
+    console.log(`⏹️ Upload cancelled: ${uploadId} - ${progress.fileName}`);
+
+    // Clean up after 1 minute
+    setTimeout(() => {
+        uploadProgressStore.delete(uploadId);
+        sseClients.delete(uploadId);
+    }, 60 * 1000);
+
+    return progress;
+}
+
+/**
+ * Check if upload is cancelled
+ * 
+ * @param {string} uploadId - Upload ID
+ * @returns {boolean} True if cancelled
+ */
+function isCancelled(uploadId) {
+    const progress = uploadProgressStore.get(uploadId);
+    return progress ? progress.status === 'cancelled' : false;
+}
+
+/**
  * Get upload progress
  * 
  * @param {string} uploadId - Upload ID
@@ -344,6 +397,8 @@ module.exports = {
     updateStageProgress,
     completeUpload,
     failUpload,
+    cancelUpload,
+    isCancelled,
     getUploadProgress,
     registerSSEClient,
     getUserActiveUploads,

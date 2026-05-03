@@ -19,8 +19,8 @@ import { FormsModule } from '@angular/forms';
 import { ShareService, Share, SharedByMeRecipient } from '../../core/services/share.service';
 
 @Component({
-    selector: 'app-share-modal',
     standalone: true,
+    selector: 'app-share-modal',
     imports: [CommonModule, FormsModule],
     template: `
         <div class="share-overlay" (click)="onClose()">
@@ -72,7 +72,6 @@ import { ShareService, Share, SharedByMeRecipient } from '../../core/services/sh
                         </div>
                         <select class="share-permission-select" [(ngModel)]="selectedPermission">
                             <option value="view">👁 Can view</option>
-                            <option value="edit">✏️ Can edit</option>
                             <option value="download">⬇️ Can download</option>
                         </select>
                     </div>
@@ -90,7 +89,10 @@ import { ShareService, Share, SharedByMeRecipient } from '../../core/services/sh
 
                 <!-- Current Shares Section -->
                 <div class="share-people-section" *ngIf="existingShares().length > 0">
-                    <h4 class="share-section-title">People with access</h4>
+                    <div class="share-section-header">
+                        <h4 class="share-section-title">People with access</h4>
+                        <button class="share-stop-all-btn" (click)="onStopSharingAll()">Stop sharing all</button>
+                    </div>
                     <div class="share-people-list">
                         <div class="share-person" *ngFor="let share of existingShares()">
                             <div class="share-person-avatar">
@@ -108,7 +110,6 @@ import { ShareService, Share, SharedByMeRecipient } from '../../core/services/sh
                                     [ngModel]="share.permission"
                                     (ngModelChange)="onPermissionChange(share.shareId, $event)">
                                     <option value="view">Can view</option>
-                                    <option value="edit">Can edit</option>
                                     <option value="download">Can download</option>
                                 </select>
                                 <button class="share-revoke-btn" (click)="onRevoke(share.shareId)" title="Remove access">
@@ -182,7 +183,7 @@ import { ShareService, Share, SharedByMeRecipient } from '../../core/services/sh
         }
 
         .share-modal {
-            background: var(--card-bg, white);
+            background: var(--bg-card, white);
             border-radius: 16px;
             width: 520px;
             max-width: 95vw;
@@ -197,7 +198,7 @@ import { ShareService, Share, SharedByMeRecipient } from '../../core/services/sh
             align-items: center;
             gap: 12px;
             padding: 20px 24px 16px;
-            border-bottom: 1px solid var(--border, #e5e7eb);
+            border-bottom: 1px solid var(--border-color, #e5e7eb);
         }
 
         .share-header-icon {
@@ -241,7 +242,7 @@ import { ShareService, Share, SharedByMeRecipient } from '../../core/services/sh
         }
 
         .share-close-btn:hover {
-            background: var(--hover-bg, #f3f4f6);
+            background: var(--bg-hover, #f3f4f6);
             color: var(--text-primary, #374151);
         }
 
@@ -259,7 +260,7 @@ import { ShareService, Share, SharedByMeRecipient } from '../../core/services/sh
         .share-email-input-container {
             flex: 1;
             min-width: 0;
-            border: 2px solid var(--border, #e5e7eb);
+            border: 2px solid var(--border-color, #e5e7eb);
             border-radius: 10px;
             padding: 6px 8px;
             display: flex;
@@ -267,7 +268,7 @@ import { ShareService, Share, SharedByMeRecipient } from '../../core/services/sh
             gap: 6px;
             align-items: center;
             transition: border-color 0.2s;
-            background: var(--input-bg, white);
+            background: var(--bg-main, white);
         }
 
         .share-email-input-container:focus-within {
@@ -328,11 +329,11 @@ import { ShareService, Share, SharedByMeRecipient } from '../../core/services/sh
 
         .share-permission-select {
             padding: 10px 12px;
-            border: 2px solid var(--border, #e5e7eb);
+            border: 2px solid var(--border-color, #e5e7eb);
             border-radius: 10px;
             font-size: 13px;
             color: var(--text-primary, #374151);
-            background: var(--input-bg, white);
+            background: var(--bg-main, white);
             cursor: pointer;
             white-space: nowrap;
             transition: border-color 0.2s;
@@ -356,7 +357,7 @@ import { ShareService, Share, SharedByMeRecipient } from '../../core/services/sh
             font-size: 13px;
             resize: none;
             color: var(--text-primary, #374151);
-            background: var(--input-bg, white);
+            background: var(--bg-main, white);
             transition: border-color 0.2s;
         }
 
@@ -373,7 +374,7 @@ import { ShareService, Share, SharedByMeRecipient } from '../../core/services/sh
         /* People with access */
         .share-people-section {
             padding: 0 24px 16px;
-            border-top: 1px solid var(--border, #e5e7eb);
+            border-top: 1px solid var(--border-color, #e5e7eb);
             margin-top: 4px;
         }
 
@@ -385,6 +386,27 @@ import { ShareService, Share, SharedByMeRecipient } from '../../core/services/sh
             margin: 0;
             text-transform: uppercase;
             letter-spacing: 0.5px;
+        }
+
+        .share-section-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 0;
+        }
+
+        .share-stop-all-btn {
+            font-size: 11px;
+            font-weight: 600;
+            color: #ef4444;
+            padding: 4px 8px;
+            border-radius: 6px;
+            transition: all 0.15s;
+        }
+
+        .share-stop-all-btn:hover {
+            background: #fef2f2;
+            text-decoration: underline;
         }
 
         .share-people-list {
@@ -403,7 +425,7 @@ import { ShareService, Share, SharedByMeRecipient } from '../../core/services/sh
         }
 
         .share-person:hover {
-            background: var(--hover-bg, #f9fafb);
+            background: var(--bg-hover, #f9fafb);
         }
 
         .share-person-avatar {
@@ -455,7 +477,7 @@ import { ShareService, Share, SharedByMeRecipient } from '../../core/services/sh
 
         .share-person-permission {
             padding: 4px 6px;
-            border: 1px solid var(--border, #e5e7eb);
+            border: 1px solid var(--border-color, #e5e7eb);
             border-radius: 6px;
             font-size: 12px;
             color: var(--text-primary, #6b7280);
@@ -495,7 +517,7 @@ import { ShareService, Share, SharedByMeRecipient } from '../../core/services/sh
             justify-content: space-between;
             padding: 6px 12px;
             border-radius: 8px;
-            background: var(--hover-bg, #f9fafb);
+            background: var(--bg-hover, #f9fafb);
             margin-bottom: 4px;
             font-size: 13px;
         }
@@ -515,7 +537,7 @@ import { ShareService, Share, SharedByMeRecipient } from '../../core/services/sh
             align-items: center;
             justify-content: space-between;
             padding: 16px 24px;
-            border-top: 1px solid var(--border, #e5e7eb);
+            border-top: 1px solid var(--border-color, #e5e7eb);
         }
 
         .share-copy-link {
@@ -559,7 +581,7 @@ export class ShareModalComponent implements OnInit, OnChanges {
     @Output() close = new EventEmitter<void>();
 
     emailInput = '';
-    selectedPermission: 'view' | 'edit' | 'download' = 'view';
+    selectedPermission: 'view' | 'download' = 'view';
     shareMessage = '';
     emailChips = signal<{ email: string }[]>([]);
     existingShares = signal<any[]>([]);
@@ -666,6 +688,18 @@ export class ShareModalComponent implements OnInit, OnChanges {
                 );
             },
             error: (err) => console.error('[ShareModal] Failed to revoke share:', err)
+        });
+    }
+
+    onStopSharingAll() {
+        if (!confirm('Are you sure you want to stop sharing this file with everyone?')) return;
+
+        this.shareService.stopSharing(this.resourceId).subscribe({
+            next: () => {
+                this.existingShares.set([]);
+                console.log('[ShareModal] All shares revoked');
+            },
+            error: (err) => console.error('[ShareModal] Failed to stop sharing all:', err)
         });
     }
 

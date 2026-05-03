@@ -136,4 +136,15 @@ export class AdminService {
         const url = `${environment.apiUrl}/analytics/storage-activity`;
         return this.http.get<AdminApiResponse>(url, { headers }).toPromise() as Promise<AdminApiResponse>;
     }
+
+    // 5. Admin Notifications
+    async getNotifications(): Promise<AdminApiResponse> {
+        const headers = await this.getHeaders();
+        return this.http.get<AdminApiResponse>(`${this.apiUrl}/notifications`, { headers }).toPromise() as Promise<AdminApiResponse>;
+    }
+
+    async markNotificationsRead(): Promise<AdminApiResponse> {
+        const headers = await this.getHeaders();
+        return this.http.post<AdminApiResponse>(`${this.apiUrl}/notifications/read`, {}, { headers }).toPromise() as Promise<AdminApiResponse>;
+    }
 }

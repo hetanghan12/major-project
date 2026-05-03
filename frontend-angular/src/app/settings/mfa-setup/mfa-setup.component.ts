@@ -18,14 +18,15 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AuthService, EnrolledFactor } from '../../core/services/auth.service';
 import { TotpSecret } from 'firebase/auth';
+import { Router } from '@angular/router';
 
 type SetupStep = 'check' | 'setup' | 'verify' | 'done';
 
 @Component({
-    selector: 'app-mfa-setup',
-    standalone: true,
-    imports: [CommonModule, FormsModule],
-    template: `
+  standalone: true,
+  selector: 'app-mfa-setup',
+  imports: [CommonModule, FormsModule],
+  template: `
     <div class="mfa-container">
       <!-- Header -->
       <div class="mfa-header">
@@ -48,17 +49,27 @@ type SetupStep = 'check' | 'setup' | 'verify' | 'done';
       </div>
 
       <!-- Error Display -->
-      <div *ngIf="error()" class="mfa-error">
-        <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-        </svg>
-        <span>{{ error() }}</span>
-        <button (click)="error.set(null)" class="ml-auto">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+      <div *ngIf="error()" class="mfa-error-container">
+        <div class="mfa-error">
+          <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                  d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
           </svg>
-        </button>
+          <div class="flex-1">
+            <span class="block">{{ error() }}</span>
+            <button 
+              *ngIf="error()?.includes('Upgrade')" 
+              (click)="router.navigate(['/plans'])" 
+              class="mt-2 text-xs font-bold underline hover:no-underline">
+              Upgrade Now →
+            </button>
+          </div>
+          <button (click)="error.set(null)" class="ml-auto p-1 hover:bg-black/5 rounded">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
       </div>
 
       <!-- ============================================ -->
@@ -281,7 +292,7 @@ type SetupStep = 'check' | 'setup' | 'verify' | 'done';
       </div>
     </div>
   `,
-    styles: [`
+  styles: [`
     .mfa-container {
       max-width: 500px;
       margin: 0 auto;
@@ -301,7 +312,7 @@ type SetupStep = 'check' | 'setup' | 'verify' | 'done';
       width: 48px;
       height: 48px;
       border-radius: 12px;
-      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -333,13 +344,18 @@ type SetupStep = 'check' | 'setup' | 'verify' | 'done';
     .mfa-error {
       display: flex;
       align-items: center;
-      gap: 0.5rem;
-      padding: 1rem;
+      gap: 0.75rem;
+      padding: 1rem 1.25rem;
       border-radius: 12px;
       background: var(--danger-bg);
       color: var(--danger);
       margin-bottom: 1.5rem;
-      border: 1px solid rgba(239, 68, 68, 0.2);
+      border: 1px solid var(--danger);
+      font-weight: 500;
+    }
+
+    .mfa-error span {
+      color: var(--danger);
     }
 
     .mfa-step {
@@ -359,16 +375,19 @@ type SetupStep = 'check' | 'setup' | 'verify' | 'done';
       border-radius: 12px;
       font-weight: 600;
       margin-bottom: 1rem;
+      border: 1px solid transparent;
     }
 
     .mfa-status-badge.enabled {
-      background: rgba(34, 197, 94, 0.1);
-      color: #22c55e;
+      background: var(--success-bg);
+      color: var(--success);
+      border-color: var(--success);
     }
 
     .mfa-status-badge.disabled {
-      background: rgba(245, 158, 11, 0.1);
-      color: #f59e0b;
+      background: var(--warning-bg);
+      color: var(--warning);
+      border-color: var(--warning);
     }
 
     .mfa-description {
@@ -396,7 +415,7 @@ type SetupStep = 'check' | 'setup' | 'verify' | 'done';
       gap: 1rem;
       padding: 1rem;
       border-radius: 12px;
-      background: var(--bg-secondary);
+      background: var(--bg-card);
       border: 1px solid var(--border-color);
     }
 
@@ -460,7 +479,7 @@ type SetupStep = 'check' | 'setup' | 'verify' | 'done';
       width: 32px;
       height: 32px;
       border-radius: 50%;
-      background: var(--bg-secondary);
+      background: var(--bg-card);
       border: 2px solid var(--border-color);
       color: var(--text-muted);
       display: flex;
@@ -477,13 +496,13 @@ type SetupStep = 'check' | 'setup' | 'verify' | 'done';
     }
 
     .mfa-setup-step.completed {
-      color: #22c55e;
+      color: var(--success);
     }
 
     .mfa-setup-step.completed svg {
       width: 32px;
       height: 32px;
-      background: #22c55e;
+      background: var(--success);
       border-radius: 50%;
       padding: 6px;
       color: white;
@@ -508,7 +527,7 @@ type SetupStep = 'check' | 'setup' | 'verify' | 'done';
     }
 
     .step-connector.active {
-      background: #22c55e;
+      background: var(--success);
     }
 
     .mfa-section-title {
@@ -527,7 +546,7 @@ type SetupStep = 'check' | 'setup' | 'verify' | 'done';
       display: flex;
       justify-content: center;
       padding: 1.5rem;
-      background: white;
+      background: white; /* QR codes usually need white background to be scanable */
       border-radius: 16px;
       margin-bottom: 1rem;
       border: 1px solid var(--border-color);
@@ -549,7 +568,7 @@ type SetupStep = 'check' | 'setup' | 'verify' | 'done';
     .app-badge {
       display: inline-block;
       padding: 0.25rem 0.75rem;
-      background: var(--bg-secondary);
+      background: var(--bg-elevated);
       border-radius: 9999px;
       font-size: 0.75rem;
       color: var(--text-secondary);
@@ -571,7 +590,7 @@ type SetupStep = 'check' | 'setup' | 'verify' | 'done';
       padding: 1rem;
       border-radius: 12px;
       border: 2px solid var(--border-color);
-      background: var(--bg-secondary);
+      background: var(--bg-card);
       color: var(--text-primary);
       transition: all 0.2s ease;
     }
@@ -579,7 +598,7 @@ type SetupStep = 'check' | 'setup' | 'verify' | 'done';
     .mfa-code-input:focus {
       outline: none;
       border-color: var(--primary);
-      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+      box-shadow: 0 0 0 3px var(--primary-light);
     }
 
     .mfa-success {
@@ -591,7 +610,7 @@ type SetupStep = 'check' | 'setup' | 'verify' | 'done';
       width: 80px;
       height: 80px;
       border-radius: 50%;
-      background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+      background: linear-gradient(135deg, var(--success) 0%, #16a34a 100%);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -613,7 +632,7 @@ type SetupStep = 'check' | 'setup' | 'verify' | 'done';
     .mfa-success-tips {
       text-align: left;
       padding: 1rem;
-      background: var(--bg-secondary);
+      background: var(--bg-elevated);
       border-radius: 12px;
       margin-bottom: 1.5rem;
     }
@@ -670,130 +689,133 @@ type SetupStep = 'check' | 'setup' | 'verify' | 'done';
   `]
 })
 export class MfaSetupComponent implements OnInit {
-    // State
-    step = signal<SetupStep>('check');
-    qrCodeUrl = signal<string>('');
-    verificationCode = '';
-    error = signal<string | null>(null);
-    loading = signal<boolean>(false);
-    mfaEnabled = signal<boolean>(false);
-    enrolledFactors = signal<EnrolledFactor[]>([]);
+  // State
+  step = signal<SetupStep>('check');
+  qrCodeUrl = signal<string>('');
+  verificationCode = '';
+  error = signal<string | null>(null);
+  loading = signal<boolean>(false);
+  mfaEnabled = signal<boolean>(false);
+  enrolledFactors = signal<EnrolledFactor[]>([]);
 
-    // Private
-    private totpSecret: TotpSecret | null = null;
+  // Private
+  private totpSecret: TotpSecret | null = null;
 
-    constructor(private authService: AuthService) { }
+  constructor(
+    private authService: AuthService,
+    public router: Router
+  ) { }
 
-    ngOnInit(): void {
-        this.checkMfaStatus();
+  ngOnInit(): void {
+    this.checkMfaStatus();
+  }
+
+  /**
+   * Check current MFA status
+   */
+  async checkMfaStatus(): Promise<void> {
+    this.loading.set(true);
+    this.error.set(null);
+
+    try {
+      const enabled = await this.authService.checkMfaStatus();
+      this.mfaEnabled.set(enabled);
+      this.enrolledFactors.set(this.authService.getEnrolledFactors());
+      console.log(`📱 MFA Status: ${enabled ? 'Enabled' : 'Disabled'}`);
+    } catch (err: any) {
+      console.error('Failed to check MFA status:', err);
+      this.error.set(err.message || 'Failed to check MFA status');
+    } finally {
+      this.loading.set(false);
+    }
+  }
+
+  /**
+   * Start the MFA enrollment process
+   */
+  async startSetup(): Promise<void> {
+    this.loading.set(true);
+    this.error.set(null);
+
+    try {
+      const result = await this.authService.startTotpEnrollment();
+      this.qrCodeUrl.set(result.qrCodeUrl);
+      this.totpSecret = result.secret;
+      this.step.set('setup');
+      console.log('🔐 MFA setup started - QR code generated');
+    } catch (err: any) {
+      console.error('Failed to start MFA setup:', err);
+      this.error.set(err.message || 'Failed to start 2FA setup');
+    } finally {
+      this.loading.set(false);
+    }
+  }
+
+  /**
+   * Verify code and complete enrollment
+   */
+  async verifyAndComplete(): Promise<void> {
+    if (!this.totpSecret || !this.verificationCode) {
+      this.error.set('Please enter the verification code');
+      return;
     }
 
-    /**
-     * Check current MFA status
-     */
-    async checkMfaStatus(): Promise<void> {
-        this.loading.set(true);
-        this.error.set(null);
-
-        try {
-            const enabled = await this.authService.checkMfaStatus();
-            this.mfaEnabled.set(enabled);
-            this.enrolledFactors.set(this.authService.getEnrolledFactors());
-            console.log(`📱 MFA Status: ${enabled ? 'Enabled' : 'Disabled'}`);
-        } catch (err: any) {
-            console.error('Failed to check MFA status:', err);
-            this.error.set(err.message || 'Failed to check MFA status');
-        } finally {
-            this.loading.set(false);
-        }
+    if (this.verificationCode.length !== 6) {
+      this.error.set('Please enter a valid 6-digit code');
+      return;
     }
 
-    /**
-     * Start the MFA enrollment process
-     */
-    async startSetup(): Promise<void> {
-        this.loading.set(true);
-        this.error.set(null);
+    this.loading.set(true);
+    this.error.set(null);
 
-        try {
-            const result = await this.authService.startTotpEnrollment();
-            this.qrCodeUrl.set(result.qrCodeUrl);
-            this.totpSecret = result.secret;
-            this.step.set('setup');
-            console.log('🔐 MFA setup started - QR code generated');
-        } catch (err: any) {
-            console.error('Failed to start MFA setup:', err);
-            this.error.set(err.message || 'Failed to start 2FA setup');
-        } finally {
-            this.loading.set(false);
-        }
+    try {
+      await this.authService.completeTotpEnrollment(
+        this.totpSecret,
+        this.verificationCode
+      );
+      this.step.set('done');
+      this.mfaEnabled.set(true);
+      console.log('✅ MFA enrollment completed');
+    } catch (err: any) {
+      console.error('MFA verification failed:', err);
+      this.error.set(err.message || 'Invalid verification code. Please try again.');
+      this.verificationCode = ''; // Clear for retry
+    } finally {
+      this.loading.set(false);
+    }
+  }
+
+  /**
+   * Disable MFA for a specific factor
+   */
+  async disableMfa(factorUid: string): Promise<void> {
+    if (!confirm('Are you sure you want to disable 2FA? This will make your account less secure.')) {
+      return;
     }
 
-    /**
-     * Verify code and complete enrollment
-     */
-    async verifyAndComplete(): Promise<void> {
-        if (!this.totpSecret || !this.verificationCode) {
-            this.error.set('Please enter the verification code');
-            return;
-        }
+    this.loading.set(true);
+    this.error.set(null);
 
-        if (this.verificationCode.length !== 6) {
-            this.error.set('Please enter a valid 6-digit code');
-            return;
-        }
-
-        this.loading.set(true);
-        this.error.set(null);
-
-        try {
-            await this.authService.completeTotpEnrollment(
-                this.totpSecret,
-                this.verificationCode
-            );
-            this.step.set('done');
-            this.mfaEnabled.set(true);
-            console.log('✅ MFA enrollment completed');
-        } catch (err: any) {
-            console.error('MFA verification failed:', err);
-            this.error.set(err.message || 'Invalid verification code. Please try again.');
-            this.verificationCode = ''; // Clear for retry
-        } finally {
-            this.loading.set(false);
-        }
+    try {
+      await this.authService.unenrollMfa(factorUid);
+      await this.checkMfaStatus();
+      console.log('🗑️ MFA disabled');
+    } catch (err: any) {
+      console.error('Failed to disable MFA:', err);
+      this.error.set(err.message || 'Failed to disable 2FA');
+    } finally {
+      this.loading.set(false);
     }
+  }
 
-    /**
-     * Disable MFA for a specific factor
-     */
-    async disableMfa(factorUid: string): Promise<void> {
-        if (!confirm('Are you sure you want to disable 2FA? This will make your account less secure.')) {
-            return;
-        }
-
-        this.loading.set(true);
-        this.error.set(null);
-
-        try {
-            await this.authService.unenrollMfa(factorUid);
-            await this.checkMfaStatus();
-            console.log('🗑️ MFA disabled');
-        } catch (err: any) {
-            console.error('Failed to disable MFA:', err);
-            this.error.set(err.message || 'Failed to disable 2FA');
-        } finally {
-            this.loading.set(false);
-        }
-    }
-
-    /**
-     * Cancel setup and return to check step
-     */
-    cancelSetup(): void {
-        this.step.set('check');
-        this.qrCodeUrl.set('');
-        this.verificationCode = '';
-        this.totpSecret = null;
-        this.error.set(null);
-    }
+  /**
+   * Cancel setup and return to check step
+   */
+  cancelSetup(): void {
+    this.step.set('check');
+    this.qrCodeUrl.set('');
+    this.verificationCode = '';
+    this.totpSecret = null;
+    this.error.set(null);
+  }
 }

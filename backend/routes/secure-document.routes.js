@@ -37,10 +37,11 @@ const { verifyFirebaseToken } = require('../middlewares/auth.middleware');
 // Import services
 const { extractText, chunkText } = require('../services/textExtraction.service');
 const { processAndStoreEmbeddings, deleteDocumentEmbeddings } = require('../services/embedding.service');
-const { saveDocument, getUserDocuments, getDocument, updateDocumentStatus, updateDocument } = require('../services/firestore.service');
+const { saveDocument, getUserDocuments, getDocument, updateDocumentStatus, updateDocument, deleteDocument, getDocumentStatus, resolveDoc } = require('../services/firestore.service');
+const { recordAuditLog, getFileAuditLogs } = require('../services/audit.service');
 
 // Import S3 service for cloud storage
-const { uploadToS3, getDownloadUrl, deleteFromS3, generateS3Key } = require('../services/s3.service');
+const { uploadToS3, getDownloadUrl, getDownloadStream, deleteFromS3, generateS3Key } = require('../services/s3.service');
 
 // Import SECURE deletion service - atomic deletion across all storage layers
 const { secureDeleteDocument } = require('../services/deletion.service');
@@ -50,14 +51,16 @@ const { checkDocumentAccess } = require('../middlewares/share-access.middleware'
 const { revokeSharesOnDelete } = require('../services/share.service');
 
 // Import storage quota service - for checking limits before upload
-const { checkStorageQuota, recalculateUserStorage } = require('../services/storage-quota.service');
+const { checkStorageQuota, checkUploadLimit, recalculateUserStorage, incrementUserStats } = require('../services/storage-quota.service');
 
 // Import upload progress service - for real-time progress tracking
 const {
     createUploadProgress,
     updateStageProgress,
     completeUpload,
-    failUpload
+    failUpload,
+    cancelUpload, // Added for cancellation support
+    isCancelled   // Added for cancellation support
 } = require('../services/upload-progress.service');
 
 // Import DOCX preview service - for HTML preview generation
@@ -76,30 +79,24 @@ const { queueThumbnailJob } = require('../services/thumbnail-queue.service');
 const { parseXlsxFile } = require('../services/xlsx-parser.service');
 
 // Import Analytics Service
-const { logFileUpload, logSecurityEvent, trackFolderCreation } = require('../services/analytics.service');
+const { logFileUpload, logSecurityEvent, trackFolderCreation, trackAiRequest, calculateCost } = require('../services/analytics.service');
+
+// Import Notification Service
+const { createNotification } = require('../services/notification.service');
 
 // =============================================================================
 // CONFIGURATION
 // =============================================================================
 
-const BASE_STORAGE_DIR = path.join(__dirname, '..', 'storage');
-const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+// Dynamic settings service
+const settingsService = require('../services/settings.service');
 
-const ALLOWED_MIME_TYPES = [
-    'application/pdf',
-    'application/msword',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    'application/vnd.ms-excel',
-    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-    'application/vnd.ms-powerpoint',
-    'text/plain',
-    'image/jpeg',
-    'image/png',
-    'audio/mpeg',
-    'audio/wav',
-    'audio/x-wav'
-];
+const BASE_STORAGE_DIR = path.join(__dirname, '..', 'storage');
+
+// Default limits to prevent severe abuse before settings are fetched
+const MAX_UPLOAD_LIMIT_MB = 1000;
+const MAX_FILE_SIZE = MAX_UPLOAD_LIMIT_MB * 1024 * 1024;
+
 
 
 const { ApiError } = require('../middlewares/error.middleware');
@@ -180,13 +177,10 @@ const storage = multer.diskStorage({
 });
 
 const fileFilter = (req, file, cb) => {
-    // Note: Mime type checking is basic (based on file extension) and can be spoofed
-    // A more robust solution would check magic numbers, but this is sufficient for now
-    if (ALLOWED_MIME_TYPES.includes(file.mimetype)) {
-        cb(null, true);
-    } else {
-        cb(new Error(`Invalid file type: ${file.mimetype}. Allowed: PDF, DOCX, TXT, Excel, PowerPoint, Image, Audio`), false);
-    }
+    // SECURITY: We now handle specific allowed types inside the route handler
+    // to allow for dynamic, admin-controlled file types without restarting the server.
+    // Multer's fileFilter is synchronous and doesn't easily support dynamic DB lookups.
+    cb(null, true);
 };
 
 const upload = multer({
@@ -198,6 +192,114 @@ const upload = multer({
 // =============================================================================
 // ROUTES - ALL REQUIRE AUTHENTICATION
 // =============================================================================
+
+/**
+ * Bulk update trash status (SOFT DELETE)
+ * POST /api/secure/documents/bulk-update-trash
+ */
+router.post('/bulk-update-trash',
+    verifyFirebaseToken,
+    async (req, res) => {
+        const userId = req.user.uid;
+        const { fileIds, isTrashed } = req.body;
+
+        if (!Array.isArray(fileIds) || fileIds.length === 0) {
+            return res.status(400).json({ success: false, message: 'No IDs provided' });
+        }
+
+        console.log(`\n🗑️  ========== BULK TRASH UPDATE ==========`);
+        console.log(`   User: ${userId}`);
+        console.log(`   Items: ${fileIds.length}`);
+        console.log(`   Status: ${isTrashed ? 'Trash' : 'Restore'}`);
+
+        const results = { success: [], failed: [] };
+
+        try {
+            const { getFirestore } = require('../config/firebase.config');
+            const db = getFirestore();
+            const batch = db.batch();
+
+            for (const fileId of fileIds) {
+                try {
+                    const { exists, docRef, data } = await resolveDoc(fileId);
+
+                    if (exists) {
+                        const ownerId = data.ownerUserId || data.userId;
+                        console.log(`      [BULK-TRASH] Item: ${fileId}, Owner: ${ownerId}, TargetUser: ${userId}`);
+
+                        if (ownerId === userId) {
+                            batch.update(docRef, {
+                                isTrashed,
+                                status: isTrashed ? 'trash' : 'completed',
+                                updatedAt: new Date().toISOString()
+                            });
+                            results.success.push(fileId);
+                        } else {
+                            console.error(`      [BULK-TRASH] 🚨 PERMISSION DENIED for ${fileId}`);
+                            results.failed.push({ id: fileId, error: 'Permission denied' });
+                        }
+                    } else {
+                        console.error(`      [BULK-TRASH] 🚨 NOT FOUND: ${fileId}`);
+                        results.failed.push({ id: fileId, error: 'Not found' });
+                    }
+                } catch (itemErr) {
+                    console.error(`      [BULK-TRASH] ❌ Error processing item ${fileId}: ${itemErr.message}`);
+                    results.failed.push({ id: fileId, error: itemErr.message });
+                }
+            }
+
+            if (results.success.length > 0) {
+                await batch.commit();
+                console.log(`   ✅ Committed batch for ${results.success.length} items`);
+            }
+
+            // Recalculate stats as trashed files might be handled differently in some views
+            await recalculateUserStorage(userId);
+
+            res.json({
+                success: true,
+                message: `Updated ${results.success.length} items`,
+                results
+            });
+
+        } catch (error) {
+            console.error(`❌ Bulk trash failed: ${error.message}`);
+            res.status(500).json({ success: false, message: error.message });
+        }
+    }
+);
+
+/**
+ * Get public system configuration (allowed types, max size)
+ * GET /api/secure/documents/config
+ */
+router.get('/config', verifyFirebaseToken, async (req, res) => {
+    try {
+        const settings = await settingsService.getSettings();
+        res.json({
+            success: true,
+            config: {
+                allowedFileTypes: settings.securitySettings.allowedFileTypes,
+                maxFileSizeMB: settings.maxFileSizeMB || 50
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to fetch config' });
+    }
+});
+
+/**
+ * Check if the document processing should continue
+ * @param {string} documentId 
+ * @returns {Promise<boolean>}
+ */
+async function isActive(documentId) {
+    const status = await getDocumentStatus(documentId);
+    if (status === 'cancelled' || status === 'failed') {
+        return false;
+    }
+    return true;
+}
 
 /**
  * Upload document (SECURE)
@@ -227,19 +329,60 @@ router.post('/upload',
         console.log(`   User: ${email} (${userId})`);
 
         if (!req.file) {
-            return res.status(400).json({
-                success: false,
-                message: 'No file uploaded'
-            });
+            return res.status(400).json({ success: false, message: 'No file uploaded' });
         }
 
-        const documentId = uuidv4();
+        // --- DYNAMIC SECURITY CHECKS (Admin Controlled) ---
+        try {
+            const settings = await settingsService.getSettings();
+
+            // 1. Check Allowed Extensions
+            const audioFallback = ["mp3", "wav", "ogg", "m4a", "mp4", "mov"];
+            const allowedExts = settings.securitySettings.allowedFileTypes ?? ["pdf", "docx", "txt", "png", "jpg", "xlsx", "pptx", ...audioFallback];
+            const ext = req.file.originalname.split('.').pop().toLowerCase();
+
+            if (!allowedExts.includes(ext)) {
+                console.warn(`🚨 SECURITY: Blocked unauthorized file type: .${ext} from user ${userId}`);
+                if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+                return res.status(403).json({
+                    success: false,
+                    message: `File type .${ext} is not allowed. Contact administrator.`
+                });
+            }
+
+            // 2. Check Custom File Size Limit
+            const maxMB = settings.maxFileSizeMB || 50;
+            const maxBytes = maxMB * 1024 * 1024;
+            if (req.file.size > maxBytes) {
+                console.warn(`🚨 SECURITY: Blocked oversized file: ${req.file.size} bytes from user ${userId} (Limit: ${maxMB}MB)`);
+                if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+                return res.status(413).json({
+                    success: false,
+                    message: `File too large. Maximum allowed size is ${maxMB}MB.`
+                });
+            }
+        } catch (settingsError) {
+            console.error('Settings check failed during upload:', settingsError.message);
+        }
+
+
+        const existingDocumentId = req.body.documentId;
+        const documentId = existingDocumentId || uuidv4();
         const uploadId = documentId;  // Use documentId as uploadId for simplicity
+
+        // SECURITY: For NEW uploads, the current user is always the owner.
+        // As per USER request: Do NOT run permission check during upload.
+        // Every upload creates a new record where current user = ownerUserId.
+        let targetOwnerId = userId;
+
         const originalFileName = req.file.originalname;
         const fileType = path.extname(originalFileName).slice(1).toLowerCase();
         const localFilePath = req.file.path;
         const fileSize = req.file.size;
-        const pineconeNamespace = userId;  // namespace = userId for isolation
+
+        // SECURITY: Always use the OWNER'S ID for isolation, even if an editor is uploading
+        const pineconeNamespace = targetOwnerId;
+
         // Normalize parentFolderId
         const parentFolderId = req.body.parentFolderId === '' ? null : (req.body.parentFolderId || null);
         console.log(`   📂 Target Folder: ${parentFolderId || 'Root (My Drive)'}`);
@@ -249,23 +392,88 @@ router.post('/upload',
         console.log(`   File: ${originalFileName}`);
         console.log(`   Size: ${fileSize} bytes`);
         console.log(`   Storage: ${localFilePath}`);
-        console.log(`   Pinecone Namespace: ${pineconeNamespace}`);
+        console.log(`   Pinecone Namespace (Owner): ${pineconeNamespace}`);
+
+        // FLAG: Track completion status for Case 3 (Page Refresh / Disconnect)
+        let isUploadFinished = false;
 
         // ============================================================
-        // STEP 0: CHECK STORAGE QUOTA
+        // CASE 3 PROTECTION: Handle client disconnection (Page Refresh)
+        // ============================================================
+        req.on('close', async () => {
+            if (!isUploadFinished) {
+                console.log(`\n   ⚠️ CONNECTION CLOSED: Client disconnected or refreshed page for ${uploadId}`);
+                console.log(`   ⏹️ Triggering implicit cancellation for ${originalFileName}`);
+
+                // 1. Mark in memory as cancelled
+                cancelUpload(uploadId);
+
+                // 2. Mark in Firestore as cancelled (this will trigger isActive checkpoints)
+                try {
+                    await updateDocumentStatus(documentId, 'cancelled', {
+                        error: 'Upload aborted by user (page refresh/disconnect)'
+                    });
+                } catch (e) {
+                    // Silently fail if doc doesn't exist yet
+                }
+            }
+        });
+
+        // ============================================================
+        // STEP 0.1: VALIDATE ALLOWED FILE TYPES (Security Settings)
         // ============================================================
         try {
-            console.log(`\n   📊 Checking storage quota...`);
-            const quotaCheck = await checkStorageQuota(userId, fileSize);
+            const { getFirestore } = require('../config/firebase.config');
+            const db = getFirestore();
+            const data = settingsDoc.exists ? settingsDoc.data() : {};
+            const securitySettings = data.securitySettings || {};
+            const audioFallback = ["mp3", "wav", "ogg", "m4a", "mp4", "mov"];
+            const allowedFileTypes = securitySettings.allowedFileTypes ?? ["pdf", "docx", "txt", "png", "jpg", "xlsx", "pptx", ...audioFallback];
 
-            if (!quotaCheck.canUpload) {
-                console.error(`   ❌ QUOTA EXCEEDED: ${quotaCheck.message}`);
+            // Perform strict extension check
+            if (!allowedFileTypes.includes(fileType)) {
+                console.error(`   ❌ FILE TYPE NOT ALLOWED: ${fileType} (Allowed: ${allowedFileTypes.join(', ')})`);
 
-                // Cleanup uploaded file
+                // Secure Cleanup: Delete the file that multer already saved to storage
                 if (fs.existsSync(localFilePath)) {
                     fs.unlinkSync(localFilePath);
+                    console.log(`   🧹 Secure Cleanup: Deleted unauthorized file type: ${localFilePath}`);
                 }
 
+                return res.status(403).json({
+                    success: false,
+                    message: "This file type is not allowed."
+                });
+            }
+            console.log(`   ✅ File type validation passed: ${fileType}`);
+        } catch (settingsError) {
+            console.error(`   ⚠️ Security settings check failed: ${settingsError.message}`);
+            // If settings can't be fetched, we default to the standard safe list as fallback
+        }
+
+        // ============================================================
+        // STEP 0.2: VALIDATE PLAN LIMITS (Upload Size & Storage Quota)
+        // ============================================================
+        try {
+            console.log(`\n   📊 Validating plan limits...`);
+
+            // A. Individual File Size Limit
+            const sizeCheck = await checkUploadLimit(userId, fileSize);
+            if (!sizeCheck.canUpload) {
+                console.error(`   ❌ UPLOAD LIMIT EXCEEDED: ${sizeCheck.message}`);
+                if (fs.existsSync(localFilePath)) fs.unlinkSync(localFilePath);
+                return res.status(413).json({
+                    success: false,
+                    message: sizeCheck.message,
+                    error: 'UPLOAD_LIMIT_EXCEEDED'
+                });
+            }
+
+            // B. Total Storage Quota
+            const quotaCheck = await checkStorageQuota(userId, fileSize);
+            if (!quotaCheck.canUpload) {
+                console.error(`   ❌ STORAGE QUOTA EXCEEDED: ${quotaCheck.message}`);
+                if (fs.existsSync(localFilePath)) fs.unlinkSync(localFilePath);
                 return res.status(413).json({
                     success: false,
                     message: quotaCheck.message,
@@ -279,14 +487,14 @@ router.post('/upload',
                 });
             }
 
-            console.log(`   ✅ Quota check passed (${quotaCheck.remainingBytes} bytes remaining)`);
-        } catch (quotaError) {
-            console.error(`   ⚠️ Quota check failed: ${quotaError.message}`);
-            // Continue with upload - don't block if quota service fails
+            console.log(`   ✅ Plan limits passed (${quotaCheck.remainingBytes} bytes remaining)`);
+        } catch (validationError) {
+            console.error(`   ⚠️ Limit validation failed: ${validationError.message}`);
+            // Continue with upload - don't block if service fails
         }
 
         // Initialize upload progress tracking
-        createUploadProgress(uploadId, userId, originalFileName, fileSize);
+        createUploadProgress(uploadId, userId, originalFileName, fileSize, localFilePath);
         updateStageProgress(uploadId, 'receiving', 100);  // File already received by multer
 
         // Track data for complete deletion later
@@ -296,30 +504,57 @@ router.post('/upload',
         let s3Url = null;
 
         try {
-            // ============================================================
-            // STEP 1: Save initial document metadata (processing status)
-            // ============================================================
             updateStageProgress(uploadId, 's3', 10);
+
+            // ============================================================
+            // SCHEMA FIX: Create document with 'uploading' status
+            // ============================================================
+            if (isCancelled(uploadId) || !(await isActive(documentId))) {
+                console.log(`   ⏹️ Process aborted: Cancellation detected before saveDocument for ${originalFileName}`);
+                if (fs.existsSync(localFilePath)) fs.unlinkSync(localFilePath);
+                return;
+            }
 
             await saveDocument({
                 documentId,
-                userId,  // SECURITY: From verified token
+                uploadId: documentId, // Added for new schema
+                userId: targetOwnerId,  // SECURITY: Preserve/Use the actual OWNER ID
+                lastEditedBy: userId,  // TRACKING: The person who is actually performing this edit/upload
                 fileName: originalFileName,
                 fileType,
                 fileSize: fileSize,
                 parentFolderId: parentFolderId,
                 storagePath: localFilePath,
-                publicUrl: '',  // Generate on download
-                pineconeNamespace,  // CRITICAL: Store for deletion
-                chunkIds: [],       // Will be updated after embedding
+                publicUrl: '',
+                storageUrl: null, // Initial null
+                createdAt: new Date(), // Required timestamp
+                pineconeNamespace,
+                chunkIds: [],
                 vectorCount: 0,
-                status: 'uploading'  // Changed from 'processing' to 'uploading'
+                status: 'uploading'  // Rule 1: Starts as uploading
             });
 
             // ============================================================
             // STEP 2: Extract text from document
-            // ============================================================
+            // ============================================
             updateStageProgress(uploadId, 's3', 30);
+
+            if (isCancelled(uploadId) || !(await isActive(documentId))) {
+                console.log(`   ⏹️ Process halted: Cancellation/Failure detected before extraction for ${uploadId}`);
+                // Complete Cleanup
+                if (fs.existsSync(localFilePath)) fs.unlinkSync(localFilePath);
+                await deleteDocument(documentId);
+                return;
+            }
+
+            // Rule 2: Change status to 'processing'
+            if (!(await updateDocumentStatus(documentId, 'processing'))) {
+                console.log(`   ⏹️ Process halted: Could not set status to processing (already cancelled)`);
+                if (fs.existsSync(localFilePath)) fs.unlinkSync(localFilePath);
+                await deleteDocument(documentId);
+                return;
+            }
+
             let extractedText = '';
             try {
                 const mimeType = req.file.mimetype;
@@ -358,19 +593,43 @@ router.post('/upload',
             // CRITICAL: Capture chunk IDs for later deletion
             // ============================================================
             updateStageProgress(uploadId, 'processing', 10);
+
+            if (isCancelled(uploadId) || !(await isActive(documentId))) {
+                console.log(`   ⏹️ Process halted: Cancellation/Failure detected before embedding for ${uploadId}`);
+                // Complete Cleanup
+                if (fs.existsSync(localFilePath)) fs.unlinkSync(localFilePath);
+                await deleteDocument(documentId);
+                return;
+            }
+
             if (extractedText && extractedText.length > 0) {
                 try {
                     const chunks = chunkText(extractedText);
                     // SECURITY: processAndStoreEmbeddings uses userId as namespace
                     const result = await processAndStoreEmbeddings(
-                        userId,  // SECURITY: Pinecone namespace = userId
+                        targetOwnerId,  // SECURITY: Pinecone namespace = OWNER ID
                         documentId,
                         originalFileName,
-                        chunks
+                        chunks,
+                        { checkCancellation: async () => isCancelled(uploadId) || !(await isActive(documentId)) }
                     );
 
                     vectorCount = result.vectorCount || 0;
                     chunkIds = result.chunkIds || [];  // CRITICAL: Capture for deletion
+
+                    // Log AI Usage for Embeddings (Production Fix)
+                    if (result.usage && result.usage.total_tokens > 0) {
+                        const model = 'text-embedding-3-large';
+                        const cost = calculateCost(model, result.usage);
+                        trackAiRequest({
+                            userId: targetOwnerId,
+                            tokens: result.usage.total_tokens,
+                            prompt_tokens: result.usage.prompt_tokens,
+                            cost: cost,
+                            model: model,
+                            type: 'DOCUMENT_PROCESSING'
+                        }).catch(e => console.error('   ⚠️ Failed to log document processing usage:', e.message));
+                    }
 
                     console.log(`   ✅ Stored ${vectorCount} vectors in namespace: ${userId}`);
                     console.log(`   🔑 Chunk IDs stored: ${chunkIds.length}`);
@@ -381,6 +640,10 @@ router.post('/upload',
                         console.warn(`   ⚠️ WARNING: No vectors were generated. Document uploaded but AI search won't work for this file.`);
                     }
                 } catch (embeddingError) {
+                    if (embeddingError.message === 'EMBEDDING_CANCELLED' || isCancelled(uploadId)) {
+                        console.log(`   ⏹️ Embedding aborted due to cancellation: ${embeddingError.message}`);
+                        throw embeddingError; // Re-throw to trigger cleanup
+                    }
                     // Log the error but DON'T fail the upload
                     // Document is still stored, just without AI search capability
                     console.error(`   ⚠️ Embedding failed: ${embeddingError.message}`);
@@ -397,8 +660,19 @@ router.post('/upload',
             // STEP 4: UPLOAD TO AWS S3
             // ============================================================
             updateStageProgress(uploadId, 's3', 50);
+
+            if (isCancelled(uploadId) || !(await isActive(documentId))) {
+                console.log(`   ⏹️ Process halted: Cancellation/Failure detected before S3 upload for ${uploadId}`);
+                // Complete Cleanup
+                if (fs.existsSync(localFilePath)) fs.unlinkSync(localFilePath);
+                await deleteDocument(documentId);
+                // SECURITY: Delete any vectors already stored in namespace
+                await deleteDocumentEmbeddings(targetOwnerId, documentId);
+                return;
+            }
+
             try {
-                s3Key = generateS3Key(userId, documentId, originalFileName);
+                s3Key = generateS3Key(targetOwnerId, documentId, originalFileName);
                 const s3Result = await uploadToS3(localFilePath, s3Key, req.file.mimetype);
                 s3Url = s3Result.s3Url;
                 console.log(`   ☁️ Uploaded to S3: ${s3Key}`);
@@ -411,18 +685,49 @@ router.post('/upload',
             }
 
             // ============================================================
-            // STEP 5: Update document with all deletion-required data
-            // CRITICAL: Store s3Key, chunkIds, vectorCount for deletion
+            // STEP 5: Rule 3 - change status = "completed"
             // ============================================================
             updateStageProgress(uploadId, 'processing', 90);
-            await updateDocumentStatus(documentId, 'ready', {
+
+            if (isCancelled(uploadId) || !(await isActive(documentId))) {
+                console.log(`   ⏹️ Process halted: Cancellation/Failure detected before final completion for ${uploadId}`);
+                // Complete Cleanup
+                if (fs.existsSync(localFilePath)) fs.unlinkSync(localFilePath);
+                await deleteDocument(documentId);
+                if (s3Key) await deleteFromS3(s3Key);
+                // SECURITY: Delete any vectors already stored in namespace
+                await deleteDocumentEmbeddings(targetOwnerId, documentId);
+                return;
+            }
+
+            if (!(await updateDocumentStatus(documentId, 'completed', {
                 vectorCount,
-                chunkIds,          // CRITICAL: For explicit vector deletion
-                pineconeNamespace, // CRITICAL: For namespace isolation
-                s3Key: s3Key,      // CRITICAL: For S3 object deletion
+                chunkIds,
+                pineconeNamespace,
+                s3Key: s3Key,
                 s3Url: s3Url,
-                storagePath: null  // Remove local path reference as we are S3-only now
-            });
+                storageUrl: s3Url, // Matching requested schema
+                publicUrl: s3Url,
+                storagePath: null,
+                status: 'completed' // Rule 3: Mark as completed
+            }))) {
+                console.log(`   ⏹️ Process halted: Could not set status to completed (already cancelled)`);
+                if (fs.existsSync(localFilePath)) fs.unlinkSync(localFilePath);
+                if (s3Key) await deleteFromS3(s3Key);
+                await deleteDocumentEmbeddings(userId, documentId);
+                await deleteDocument(documentId);
+                return;
+            }
+
+            // ============================================================
+            // STEP 5.1: Update User Storage Statistics (INCREMENT)
+            // ============================================================
+            try {
+                console.log(`   📊 Updating storage stats: +${fileSize} bytes, +1 file`);
+                await incrementUserStats(targetOwnerId, fileSize, 1);
+            } catch (statsErr) {
+                console.warn(`   ⚠️ Storage stats update failed (non-blocking): ${statsErr.message}`);
+            }
 
             // CLEANUP: Delete local file immediately after successful S3 upload
             if (fs.existsSync(localFilePath)) {
@@ -439,7 +744,8 @@ router.post('/upload',
             // ============================================================
             try {
                 await logFileUpload({
-                    userId,
+                    userId: targetOwnerId, // Log against owner or uploader? Usually owner for storage tracking
+                    uploaderId: userId,    // Track who actually did it
                     userEmail: email,
                     fileName: originalFileName,
                     fileType,
@@ -479,10 +785,13 @@ router.post('/upload',
             let xlsxPreviewPath = null;
             const isXlsx = fileType === 'xlsx' ||
                 fileType === 'xls' ||
+                fileType === 'csv' ||
                 fileType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
                 fileType === 'application/vnd.ms-excel' ||
+                fileType === 'text/csv' ||
                 originalFileName.toLowerCase().endsWith('.xlsx') ||
-                originalFileName.toLowerCase().endsWith('.xls');
+                originalFileName.toLowerCase().endsWith('.xls') ||
+                originalFileName.toLowerCase().endsWith('.csv');
 
             if (isXlsx) {
                 try {
@@ -499,6 +808,14 @@ router.post('/upload',
             // Mark upload as complete
             completeUpload(uploadId, { documentId, vectorCount, s3Key, thumbnailJobId, xlsxPreviewPath });
 
+            // Trigger notification
+            createNotification({
+                userId,
+                type: 'upload',
+                message: `Your document "${originalFileName}" has been uploaded successfully.`,
+                fileId: documentId
+            }).catch(e => console.error('Failed to create upload notification:', e));
+
             console.log(`   ✅ UPLOAD COMPLETE`);
             console.log(`   📊 Deletion data stored:`);
             console.log(`      - S3 Key: ${s3Key || 'none'}`);
@@ -507,6 +824,7 @@ router.post('/upload',
             console.log(`      - Thumbnail Job: ${thumbnailJobId || 'none'}`);
             console.log(`========== END SECURE UPLOAD ==========\n`);
 
+            isUploadFinished = true;
             res.status(201).json({
                 success: true,
                 message: 'Document uploaded successfully',
@@ -520,27 +838,48 @@ router.post('/upload',
                     chunkIdsCount: chunkIds.length,  // Don't expose actual IDs
                     s3Key,
                     s3Url,
-                    thumbnailUrl: null,  // Thumbnail is generated asynchronously
-                    thumbnailStatus: 'processing', // Display placeholder
-                    status: 'ready',
-                    uploadedAt: new Date().toISOString()
+                    thumbnailUrl: null,
+                    thumbnailStatus: 'processing',
+                    status: 'completed',
+                    uploadedAt: new Date().toISOString(),
+                    createdAt: new Date()
                 }
             });
 
         } catch (error) {
+            isUploadFinished = true; // Stop disconnection handler
             console.error(`   ❌ Upload failed: ${error.message}`);
             console.error(error.stack);
 
             // Mark upload as failed for SSE clients
             failUpload(uploadId, error.message);
 
-            // Cleanup on failure
+            // Cleanup on failure/cancellation
             if (fs.existsSync(localFilePath)) {
                 try {
                     fs.unlinkSync(localFilePath);
                 } catch (unlinkError) {
                     console.error(`   ⚠️ Failed to delete local file after error: ${unlinkError.message}`);
                 }
+            }
+
+            // FULL CLEANUP: Delete any partial data from cloud storage
+            try {
+                if (s3Key) {
+                    console.log(`   🧹 Error Cleanup: Deleting partial S3 object ${s3Key}`);
+                    await deleteFromS3(s3Key);
+                }
+
+                // SECURITY: Delete any vectors already stored in namespace
+                console.log(`   🧹 Error Cleanup: Deleting partial Pinecone vectors for ${documentId}`);
+                await deleteDocumentEmbeddings(targetOwnerId, documentId);
+
+                // Rule 2 & 5: Cleanup Firestore document if not a "failed" state should be "cancelled"
+                if (isCancelled(uploadId)) {
+                    await deleteDocument(documentId);
+                }
+            } catch (cleanupError) {
+                console.error(`   ⚠️ Final cleanup failed: ${cleanupError.message}`);
             }
 
             try {
@@ -555,6 +894,8 @@ router.post('/upload',
         }
     }
 );
+
+// End of upload routes
 
 /**
  * Create a new folder
@@ -591,6 +932,9 @@ router.post('/folder', verifyFirebaseToken, async (req, res) => {
         };
 
         await saveDocument(folderData);
+        
+        // Update user stats (Increment folder count)
+        await incrementUserStats(userId, 0, 1);
 
         // Track folder creation for dashboard stats
         trackFolderCreation().catch(err => console.error('Folder track failed:', err.message));
@@ -645,38 +989,55 @@ router.get('/',
 
             console.log(`   ✅ [DOCS] Found ${result.documents.length} documents`);
 
-            // 2. Map S3 presigned URLs for thumbnails with HEAVY DEFENSIVE CHECKS
+            // 2. Map documents - preserve local /api/thumbnails/ URLs, only sign S3 URLs
             const mappedDocuments = await Promise.all(result.documents.map(async (doc) => {
                 try {
                     // Start with doc.thumbnailUrl from Firestore
                     let thumbnailUrl = doc.thumbnailUrl || null;
 
-                    // If we have a preview path OR an S3-format URL, generate a fresh signed URL
-                    const hasS3Thumbnail = thumbnailUrl && typeof thumbnailUrl === 'string' && (thumbnailUrl.includes('.s3.') || thumbnailUrl.includes('http'));
-
-                    if (doc.previewPath || hasS3Thumbnail) {
+                    // S3-First Thumbnail Strategy (to avoid Ngrok interstitial intercepting <img> tags)
+                    // We only use the local thumbnail if S3 thumbnail is unavailable.
+                    const docIdForThumb = doc.documentId || doc.id;
+                    const localThumbPath = path.join(BASE_STORAGE_DIR, 'thumbnails', `${docIdForThumb}.png`);
+                    
+                    // Prefer doc.previewUrl (S3 version) if it's available in Firestore
+                    let cloudUrl = doc.previewUrl || thumbnailUrl || null;
+                    let hasCloudUrl = cloudUrl && typeof cloudUrl === 'string' && (cloudUrl.includes('.s3.') || cloudUrl.startsWith('http'));
+                    
+                    if (hasCloudUrl) {
                         try {
+                            // If it's a cloud URL, we need a fresh signed version (S3 URLs expire)
                             let pathForSign = doc.previewPath;
 
-                            // If no previewPath but we have an S3 URL, try to extract the key
-                            if (!pathForSign && thumbnailUrl && typeof thumbnailUrl === 'string' && thumbnailUrl.startsWith('http')) {
+                            if (!pathForSign && cloudUrl.startsWith('http')) {
                                 try {
-                                    const urlObj = new URL(thumbnailUrl);
-                                    pathForSign = urlObj.pathname.substring(1); // Remove leading slash
+                                    const urlObj = new URL(cloudUrl);
+                                    pathForSign = urlObj.pathname.substring(1);
                                 } catch (urlErr) {
-                                    console.warn(`   ⚠️ [DOCS] Invalid thumbnail URL for doc ${doc.id}: ${thumbnailUrl}`);
                                     pathForSign = null;
                                 }
                             }
 
                             if (pathForSign) {
-                                // Regenerate a fresh signed URL (1 hour)
                                 thumbnailUrl = await getDownloadUrl(pathForSign, 3600);
+                            } else {
+                                // If we can't sign it but it's already a cloud URL, use as is
+                                thumbnailUrl = cloudUrl;
                             }
                         } catch (signErr) {
-                            console.warn(`   ⚠️ [DOCS] Thumbnail signing failed for ${doc.id}:`, signErr.message);
-                            // Fallback to original URL - don't crash the whole list!
+                            console.warn(`   ⚠️ [DOCS] Thumbnail signing failed for ${docIdForThumb}:`, signErr.message);
+                            hasCloudUrl = false; // Fallback to local
                         }
+                    }
+
+                    // Fallback to local if no cloud URL or cloud URL failed
+                    if (!hasCloudUrl && fs.existsSync(localThumbPath)) {
+                        thumbnailUrl = `/api/thumbnails/${docIdForThumb}.png`;
+                        console.log(`   🖼️  [THUMB] User ${userId}: Using LOCAL for ${docIdForThumb}`);
+                    } else if (hasCloudUrl) {
+                        console.log(`   ☁️  [THUMB] User ${userId}: Using S3 for ${docIdForThumb} -> ${thumbnailUrl ? thumbnailUrl.substring(0, 50) + '...' : 'NULL'}`);
+                    } else {
+                        console.log(`   ❌ [THUMB] User ${userId}: NO THUMBNAIL AVAILABLE for ${docIdForThumb}`);
                     }
 
                     return {
@@ -903,7 +1264,13 @@ router.get('/:id/view',
                     '.xml': 'application/xml',
                     '.html': 'text/html',
                     '.css': 'text/css',
-                    '.js': 'application/javascript'
+                    '.js': 'application/javascript',
+                    '.mp3': 'audio/mpeg',
+                    '.wav': 'audio/wav',
+                    '.m4a': 'audio/x-m4a',
+                    '.mp4': 'video/mp4',
+                    '.webm': 'video/webm',
+                    '.mov': 'video/quicktime'
                 };
 
                 const contentType = mimeTypes[ext] || 'application/octet-stream';
@@ -922,13 +1289,54 @@ router.get('/:id/view',
                 return;
             }
 
-            // EXCLUSIVE S3 VIEW STRATEGY
+            // STRATEGY 2: Cloud Storage (S3) Stream Proxy (Universal Proxy)
             if (document.s3Key) {
-                console.log(`   ☁️ Previewing from S3: ${document.s3Key}`);
-                const s3Url = await getDownloadUrl(document.s3Key, 3600); // 1 hour validity
+                console.log(`   ☁️ [PROXY] UNIVERSAL STRATEGY for: ${document.s3Key}`);
+                
+                try {
+                    // 1. Generate a signed URL (we know this works locally)
+                    const s3Url = await getDownloadUrl(document.s3Key, 600); // 10 min
+                    
+                    // 2. Head the URL to get metadata (optional but good)
+                    // Or just stream directly
+                    const https = require('https');
+                    
+                    console.log(`   🔗 [PROXY] Streaming from signed URL...`);
 
-                // Redirect to signed URL
-                return res.redirect(s3Url);
+                    https.get(s3Url, (s3Res) => {
+                        if (s3Res.statusCode !== 200) {
+                            console.error(`   ❌ [PROXY] S3 Fetch failed with status: ${s3Res.statusCode}`);
+                            return res.status(s3Res.statusCode).send('Could not fetch from S3');
+                        }
+
+                        // Determine content type
+                        let finalContentType = s3Res.headers['content-type'] || 'application/octet-stream';
+                        const ext = path.extname(document.fileName).toLowerCase();
+                        if (finalContentType === 'application/octet-stream' || finalContentType === 'binary/octet-stream') {
+                             const audioTypes = { '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.m4a': 'audio/x-m4a', '.mp4': 'video/mp4' };
+                             if (audioTypes[ext]) finalContentType = audioTypes[ext];
+                        }
+
+                        // Proxy headers
+                        res.setHeader('Content-Type', finalContentType);
+                        if (s3Res.headers['content-length']) res.setHeader('Content-Length', s3Res.headers['content-length']);
+                        res.setHeader('Content-Disposition', `inline; filename="${document.fileName}"`);
+                        res.setHeader('Cache-Control', 'private, max-age=3600');
+                        res.setHeader('Accept-Ranges', 'bytes');
+
+                        console.log(`   ✅ [PROXY] Proxy stream active. Type: ${finalContentType}`);
+
+                        s3Res.pipe(res);
+                    }).on('error', (err) => {
+                        console.error(`   ❌ [PROXY] HTTPS error: ${err.message}`);
+                        if (!res.headersSent) res.status(500).send('Proxy error');
+                    });
+
+                    return; // Done
+                } catch (proxyError) {
+                    console.error(`   ❌ [PROXY] Universal Proxy failed: ${proxyError.message}`);
+                    return res.status(500).json({ success: false, message: 'Proxy failed' });
+                }
             }
 
             return res.status(404).json({
@@ -962,16 +1370,19 @@ router.get('/:id/preview',
     checkDocumentAccess(), // Sharing: owner OR active share
     async (req, res) => {
         const documentId = req.params.id;
+        console.log(`[PREVIEW] Request started for documentId: "${documentId}"`);
 
         try {
             const document = await getDocument(documentId);
 
             if (!document) {
+                console.error(`[PREVIEW] getDocument(${documentId}) returned null!`);
                 return res.status(404).json({
                     success: false,
-                    message: 'Document not found'
+                    message: 'Preview source document not found'
                 });
             }
+            console.log(`[PREVIEW] Document found: "${document.fileName}" (${document.fileType})`);
 
             const fileType = document.fileType?.toLowerCase() || '';
             const isDocx = fileType === 'docx' || fileType === 'doc' ||
@@ -988,12 +1399,14 @@ router.get('/:id/preview',
             const previewExists = hasPreview(documentId);
 
             if (!previewExists) {
+                console.log(`[PREVIEW] HTML preview not found for ${documentId}. Generating...`);
                 // Try to generate it on the fly
                 try {
                     // Pass storagePath for legacy local files, and s3Key for new S3 files
                     await convertDocxToHtml(document.storagePath, documentId, document.s3Key);
+                    console.log(`[PREVIEW] Regeneration SUCCESS for ${documentId}`);
                 } catch (err) {
-                    console.error('Failed to generate preview on the fly:', err.message);
+                    console.error(`[PREVIEW] Regeneration FAILED for ${documentId}: ${err.message}`);
 
 
                     // Fallback 1: S3 raw file
@@ -1106,6 +1519,14 @@ router.delete('/:id',
             // Re-calculate storage just to be safe
             await recalculateUserStorage(userId);
 
+            // Audit: Log the delete action
+            await recordAuditLog({
+                userId,
+                fileId: documentId,
+                action: 'delete',
+                details: { fileName: document.fileName }
+            });
+
             res.json({
                 success: true,
                 message: 'Document deleted successfully',
@@ -1130,16 +1551,17 @@ router.delete('/:id',
  */
 router.patch('/:id',
     verifyFirebaseToken,
+    checkDocumentAccess('edit'), // Sharing: owner OR active share with 'edit' permission
     async (req, res) => {
         const userId = req.user.uid;
         const documentId = req.params.id;
         const updates = req.body;
 
         try {
-            // Verify ownership
+            // Document is already fetched by checkDocumentAccess middleware and attached to req.accessInfo if needed
+            // But we still need the document data to return in the response
             const document = await getDocument(documentId);
             if (!document) return res.status(404).json({ success: false, message: 'Not found' });
-            if (document.userId !== userId) return res.status(403).json({ success: false, message: 'Access denied' });
 
             // Whitelist allowed fields
             const allowedUpdates = ['isStarred', 'isTrashed', 'fileName', 'parentFolderId'];
@@ -1155,7 +1577,41 @@ router.patch('/:id',
                 return res.status(400).json({ success: false, message: 'No valid fields provided' });
             }
 
-            await updateDocument(documentId, safeUpdates);
+            // Handle special recursive trash update if needed
+            if (safeUpdates.hasOwnProperty('isTrashed')) {
+                await performTrashUpdate(userId, documentId, safeUpdates.isTrashed);
+                // If there are other updates (like rename), apply them too
+                const otherUpdates = { ...safeUpdates };
+                delete otherUpdates.isTrashed;
+                if (Object.keys(otherUpdates).length > 0) {
+                    await updateDocument(documentId, otherUpdates);
+                }
+            } else {
+                await updateDocument(documentId, safeUpdates);
+            }
+
+            // Audit: Determine action type and log
+            let auditAction = 'update';
+            if (safeUpdates.fileName && safeUpdates.fileName !== document.fileName) {
+                auditAction = 'rename';
+            } else if (safeUpdates.isTrashed === true) {
+                auditAction = 'trash';
+            } else if (safeUpdates.isTrashed === false) {
+                auditAction = 'restore';
+            }
+
+            const auditDetails = { updates: Object.keys(safeUpdates) };
+            if (safeUpdates.fileName !== undefined) {
+                auditDetails.oldName = document.fileName;
+                auditDetails.newName = safeUpdates.fileName;
+            }
+
+            await recordAuditLog({
+                userId,
+                fileId: documentId,
+                action: auditAction,
+                details: auditDetails
+            });
 
             res.json({
                 success: true,
@@ -1164,6 +1620,133 @@ router.patch('/:id',
             });
         } catch (error) {
             console.error(`❌ Update failed: ${error.message}`);
+            res.status(500).json({ success: false, message: error.message });
+        }
+    }
+);
+
+/**
+ * Save direct content edits to a document (SECURE)
+ * POST /api/secure/documents/:id/save
+ * 
+ * Used for direct text content updates after permission check.
+ */
+router.post('/:id/save',
+    verifyFirebaseToken,
+    checkDocumentAccess('edit'), // Sharing: owner OR active share with 'edit' permission
+    async (req, res) => {
+        const userId = req.user.uid;
+        const documentId = req.params.id;
+        const { content } = req.body;
+
+        try {
+            // Verify original document exists
+            const document = await getDocument(documentId);
+            if (!document) return res.status(404).json({ success: false, message: 'Document not found' });
+
+            // Prepare updates
+            const updates = {
+                content: content || '',
+                lastEditedBy: userId,
+                updatedAt: new Date().toISOString()
+            };
+
+            // Update original resource
+            await updateDocument(documentId, updates);
+
+            // Audit: Log the edit action
+            await recordAuditLog({
+                userId,
+                fileId: documentId,
+                action: 'edit',
+                details: {
+                    contentLength: content?.length || 0,
+                    source: 'web_editor'
+                }
+            });
+
+            console.log(`✅ Edits saved for ${documentId} by ${userId}`);
+
+            res.json({
+                success: true,
+                message: 'Changes saved successfully',
+                lastEditedBy: userId,
+                updatedAt: updates.updatedAt
+            });
+
+        } catch (error) {
+            console.error(`❌ Save failed: ${error.message}`);
+            res.status(500).json({ success: false, message: 'Failed to save changes: ' + error.message });
+        }
+    }
+);
+
+/**
+ * Get audit logs for a document (SECURE)
+ * GET /api/secure/documents/:id/audit
+ */
+router.get('/:id/audit',
+    verifyFirebaseToken,
+    checkDocumentAccess(),
+    async (req, res) => {
+        const userId = req.user.uid;
+        const documentId = req.params.id;
+
+        try {
+            const document = await getDocument(documentId);
+            if (!document) return res.status(404).json({ success: false, message: 'Not found' });
+
+            // Only owner can see audit logs for privacy
+            if (document.userId !== userId) {
+                return res.status(403).json({ success: false, message: 'Only the owner can view audit logs' });
+            }
+
+            const logs = await getFileAuditLogs(documentId);
+            res.json({ success: true, logs });
+        } catch (error) {
+            console.error(`❌ Audit fetch failed: ${error.message}`);
+            res.status(500).json({ success: false, message: error.message });
+        }
+    }
+);
+
+/**
+ * Cancel an ongoing upload
+ * POST /api/secure/documents/:id/cancel
+ */
+router.post('/:id/cancel',
+    verifyFirebaseToken,
+    async (req, res) => {
+        const userId = req.user.uid;
+        const documentId = req.params.id;
+
+        console.log(`⏹️  CANCEL REQUEST: Document ${documentId} (User: ${userId})`);
+
+        try {
+            // 1. Mark in memory as cancelled (if active)
+            cancelUpload(documentId);
+
+            // 2. Update Firestore status ONLY if it's not already terminal
+            try {
+                await updateDocumentStatus(documentId, 'cancelled');
+            } catch (fsError) {
+                console.warn(`[Cleanup] Firestore status update failed: ${fsError.message}`);
+            }
+
+            // 3. Document might already have some data in S3 or Pinecone
+            const document = await getDocument(documentId);
+            if (document && document.userId === userId) {
+                // Perform atomic deletion of any partial data
+                await secureDeleteDocument(userId, documentId);
+            }
+
+            res.json({
+                success: true,
+                message: 'Upload cancelled successfully'
+            });
+
+        } catch (error) {
+            console.error(`❌ Cancel failed: ${error.message}`);
             res.status(500).json({ success: false, message: error.message });
         }
     }
@@ -1273,4 +1856,491 @@ router.post('/:id/copy',
     }
 );
 
+/**
+ * Bulk delete documents (SECURE)
+ * POST /api/secure/documents/bulk-delete
+ * 
+ * SECURITY:
+ * - Requires valid Firebase token
+ * - Verifies ownership for each document
+ * - ATOMIC DELETE: Database + Filesystem + Pinecone + S3
+ */
+router.post('/bulk-delete',
+    verifyFirebaseToken,
+    async (req, res) => {
+        const userId = req.user.uid;
+        const { fileIds } = req.body;
+
+        if (!Array.isArray(fileIds) || fileIds.length === 0) {
+            return res.status(400).json({ success: false, message: 'No file IDs provided' });
+        }
+
+        console.log(`\n🗑️  ========== BULK DELETE REQUEST ==========`);
+        console.log(`   User: ${userId}`);
+        console.log(`   Items: ${fileIds.length}`);
+
+        const results = {
+            success: [],
+            failed: []
+        };
+
+        try {
+            for (const fileId of fileIds) {
+                try {
+                    // 1. Verify ownership (Double check each one because bulk is dangerous)
+                    const document = await getDocument(fileId);
+
+                    if (!document) {
+                        results.failed.push({ id: fileId, error: 'Document not found' });
+                        continue;
+                    }
+
+                    // SECURITY: Match ownerUserId OR userId (uploader)
+                    const ownerId = document.ownerUserId || document.userId;
+                    if (ownerId !== userId) {
+                        console.error(`🚨 SECURITY: User ${userId} tried to bulk-delete doc owned by ${ownerId}`);
+                        results.failed.push({ id: fileId, error: 'Access denied' });
+                        continue;
+                    }
+
+                    // 2. Secure atomic deletion
+                    const deleteResult = await secureDeleteDocument(userId, fileId);
+
+                    if (!deleteResult.success) {
+                        results.failed.push({ id: fileId, error: deleteResult.error || 'Deletion semi-failed' });
+                        // If it semi-failed (e.g. metadata delete failed), we shouldn't count it as success
+                        if (!deleteResult.steps.metadata.success) continue;
+                    }
+
+                    // 3. Revoke all shares
+                    try {
+                        await revokeSharesOnDelete(fileId);
+                    } catch (shareErr) {
+                        console.error(`   ⚠️ Share cleanup failed for ${fileId}: ${shareErr.message}`);
+                    }
+
+                    // 4. Audit: Log the delete action
+                    await recordAuditLog({
+                        userId,
+                        fileId: fileId,
+                        action: 'delete',
+                        details: { fileName: document.fileName, bulk: true }
+                    });
+
+                    results.success.push(fileId);
+                    console.log(`   ✅ Successful Delete: ${document.fileName} (${fileId})`);
+
+                } catch (itemError) {
+                    console.error(`   ❌ Failed to delete ${fileId}: ${itemError.message}`);
+                    results.failed.push({ id: fileId, error: itemError.message });
+                }
+            }
+
+            // ============================================================
+            // STEP 4: UPDATE STORAGE QUOTA (ONCE at end)
+            // ============================================================
+            await recalculateUserStorage(userId);
+
+            res.json({
+                success: true,
+                message: `Processed ${fileIds.length} items`,
+                results
+            });
+
+        } catch (error) {
+            console.error(`❌ Bulk delete internal error: ${error.message}`);
+            res.status(500).json({
+                success: false,
+                message: 'Failed to process bulk delete: ' + error.message
+            });
+        }
+    }
+);
+
+/**
+ * Bulk update trash status (SOFT DELETE / RESTORE)
+ * POST /api/secure/documents/bulk-update-trash
+ * 
+ * Logic:
+ * - Update isTrashed status for multiple items
+ * - Recursively update children if it's a folder
+ */
+router.post('/bulk-update-trash',
+    verifyFirebaseToken,
+    async (req, res) => {
+        const userId = req.user.uid;
+        const { fileIds, isTrashed } = req.body;
+
+        if (!Array.isArray(fileIds) || fileIds.length === 0) {
+            return res.status(400).json({ success: false, message: 'No file IDs provided' });
+        }
+
+        console.log(`\n🗑️  ========== BULK TRASH UPDATE ==========`);
+        console.log(`   User: ${userId}`);
+        console.log(`   Items: ${fileIds.length}`);
+        console.log(`   Action: ${isTrashed ? 'Move to Trash' : 'Restore'}`);
+
+        const results = { success: [], failed: [] };
+
+        try {
+            for (const fileId of fileIds) {
+                try {
+                    // 1. Verify ownership
+                    const document = await getDocument(fileId);
+                    if (!document || document.userId !== userId) {
+                        results.failed.push({ id: fileId, error: 'Access denied' });
+                        continue;
+                    }
+
+                    // 2. Perform trash update (recursive for folders)
+                    await performTrashUpdate(userId, fileId, isTrashed);
+
+                    // 3. Audit
+                    await recordAuditLog({
+                        userId,
+                        fileId: fileId,
+                        action: isTrashed ? 'trash' : 'restore',
+                        details: { fileName: document.fileName, bulk: true }
+                    });
+
+                    results.success.push(fileId);
+                } catch (itemError) {
+                    results.failed.push({ id: fileId, error: itemError.message });
+                }
+            }
+
+            res.json({
+                success: true,
+                message: `Processed ${fileIds.length} items`,
+                results
+            });
+
+        } catch (error) {
+            console.error(`❌ Bulk trash failed: ${error.message}`);
+            res.status(500).json({ success: false, message: error.message });
+        }
+    }
+);
+
+/**
+ * Recursive Trash Update Helper
+ */
+async function performTrashUpdate(userId, resourceId, isTrashed) {
+    const doc = await getDocument(resourceId);
+    if (!doc || doc.userId !== userId) return;
+
+    // Update the item itself
+    await updateDocument(resourceId, { isTrashed });
+
+    // If it's a folder, recursively update all children
+    if (doc.isFolder) {
+        const { getFirestore } = require('../config/firebase.config');
+        const db = getFirestore();
+        const children = await db.collection('files')
+            .where('userId', '==', userId)
+            .where('parentFolderId', '==', resourceId)
+            .get();
+
+        const childPromises = children.docs.map(childDoc =>
+            performTrashUpdate(userId, childDoc.id, isTrashed)
+        );
+        await Promise.all(childPromises);
+    }
+}
+
+/**
+ * Bulk move documents (SECURE)
+ * POST /api/secure/documents/bulk-move
+ * 
+ * Logic:
+ * - Update parent folder reference
+ * - Prevent moving into same folder
+ * - Prevent circular moves (folder inside itself)
+ */
+router.post('/bulk-move',
+    verifyFirebaseToken,
+    async (req, res) => {
+        const userId = req.user.uid;
+        const { fileIds, destinationFolderId } = req.body;
+
+        if (!Array.isArray(fileIds) || fileIds.length === 0) {
+            return res.status(400).json({ success: false, message: 'No file IDs provided' });
+        }
+
+        console.log(`\n📦 ========== BULK MOVE REQUEST ==========`);
+        console.log(`   User: ${userId}`);
+        console.log(`   Items: ${fileIds.length}`);
+        console.log(`   Destination: ${destinationFolderId || 'Root'}`);
+
+        const results = {
+            success: [],
+            failed: []
+        };
+
+        try {
+            // 1. Verify destination folder ownership if provided
+            if (destinationFolderId) {
+                const destinationFolder = await getDocument(destinationFolderId);
+                if (!destinationFolder || destinationFolder.userId !== userId) {
+                    return res.status(403).json({ success: false, message: 'Destination folder not found or access denied' });
+                }
+                if (!destinationFolder.isFolder) {
+                    return res.status(400).json({ success: false, message: 'Destination must be a folder' });
+                }
+            }
+
+            for (const fileId of fileIds) {
+                try {
+                    // Verify ownership
+                    const document = await getDocument(fileId);
+                    if (!document || document.userId !== userId) {
+                        results.failed.push({ id: fileId, error: 'Not found or access denied' });
+                        continue;
+                    }
+
+                    // Prevent moving into itself
+                    if (fileId === destinationFolderId) {
+                        results.failed.push({ id: fileId, error: 'Cannot move a folder into itself' });
+                        continue;
+                    }
+
+                    // Prevent redundant move
+                    if (document.parentFolderId === destinationFolderId) {
+                        results.success.push(fileId);
+                        continue;
+                    }
+
+                    // Circularity check (if folder)
+                    if (document.isFolder && destinationFolderId) {
+                        const isDescendant = await checkIsDescendant(fileId, destinationFolderId);
+                        if (isDescendant) {
+                            results.failed.push({ id: fileId, error: 'Cannot move a folder into its own descendant' });
+                            continue;
+                        }
+                    }
+
+                    // Update parentFolderId
+                    await updateDocument(fileId, { parentFolderId: destinationFolderId });
+
+                    // Audit
+                    await recordAuditLog({
+                        userId,
+                        fileId: fileId,
+                        action: 'move',
+                        details: {
+                            fileName: document.fileName,
+                            from: document.parentFolderId,
+                            to: destinationFolderId,
+                            bulk: true
+                        }
+                    });
+
+                    results.success.push(fileId);
+                } catch (itemError) {
+                    results.failed.push({ id: fileId, error: itemError.message });
+                }
+            }
+
+            res.json({
+                success: true,
+                message: `Processed ${fileIds.length} items`,
+                results
+            });
+
+        } catch (error) {
+            console.error(`❌ Bulk move failed: ${error.message}`);
+            res.status(500).json({ success: false, message: error.message });
+        }
+    }
+);
+
+/**
+ * Circularity check helper
+ */
+async function checkIsDescendant(folderId, targetId) {
+    if (!targetId) return false;
+    let currentId = targetId;
+    while (currentId) {
+        if (currentId === folderId) return true;
+        const parent = await getDocument(currentId);
+        currentId = parent?.parentFolderId || null;
+    }
+    return false;
+}
+
+/**
+ * Bulk copy documents (SECURE)
+ * POST /api/secure/documents/bulk-copy
+ */
+router.post('/bulk-copy',
+    verifyFirebaseToken,
+    async (req, res) => {
+        const userId = req.user.uid;
+        const { fileIds, destinationFolderId } = req.body;
+
+        if (!Array.isArray(fileIds) || fileIds.length === 0) {
+            return res.status(400).json({ success: false, message: 'No file IDs provided' });
+        }
+
+        console.log(`\n👯 ========== BULK COPY REQUEST ==========`);
+        console.log(`   User: ${userId}`);
+        console.log(`   Items: ${fileIds.length}`);
+        console.log(`   Target: ${destinationFolderId || 'Root'}`);
+
+        const results = { success: [], failed: [] };
+
+        try {
+            // Validate destination
+            if (destinationFolderId) {
+                const dest = await getDocument(destinationFolderId);
+                if (!dest || dest.userId !== userId) {
+                    return res.status(403).json({ success: false, message: 'Invalid destination' });
+                }
+                if (!dest.isFolder) {
+                    return res.status(400).json({ success: false, message: 'Target must be a folder' });
+                }
+            }
+
+            for (const fileId of fileIds) {
+                try {
+                    const newId = await performRecursiveCopy(userId, fileId, destinationFolderId, true);
+                    results.success.push({ originalId: fileId, newId });
+                } catch (err) {
+                    console.error(`   ❌ Copy failed for ${fileId}:`, err.message);
+                    results.failed.push({ id: fileId, error: err.message });
+                }
+            }
+
+            // Update user stats
+            await recalculateUserStorage(userId);
+
+            res.json({
+                success: true,
+                message: `Successfully duplicated ${results.success.length} items`,
+                results
+            });
+
+        } catch (error) {
+            console.error(`❌ Bulk copy failed: ${error.message}`);
+            res.status(500).json({ success: false, message: error.message });
+        }
+    }
+);
+
+/**
+ * Recursive Copy Helper
+ */
+async function performRecursiveCopy(userId, sourceId, targetFolderId, isRoot = false) {
+    const sourceDoc = await getDocument(sourceId);
+    if (!sourceDoc || sourceDoc.userId !== userId) throw new Error('Source not found or access denied');
+
+    const newId = uuidv4();
+    let newFileName = sourceDoc.fileName;
+
+    // Rule: Append (Copy) to root items
+    if (isRoot) {
+        if (newFileName.includes('.')) {
+            const parts = newFileName.split('.');
+            const ext = parts.pop();
+            newFileName = `${parts.join('.')} (Copy).${ext}`;
+        } else {
+            newFileName = `${newFileName} (Copy)`;
+        }
+    }
+
+    let newS3Key = sourceDoc.s3Key || null;
+    let newS3Url = sourceDoc.s3Url || sourceDoc.publicUrl || null;
+
+    // Handle physical file duplication for NON-folders
+    if (!sourceDoc.isFolder && sourceDoc.s3Key) {
+        try {
+            const targetKey = generateS3Key(userId, newId, newFileName);
+            const s3Result = await copyS3Object(sourceDoc.s3Key, targetKey);
+            newS3Key = s3Result.s3Key;
+            newS3Url = s3Result.s3Url;
+        } catch (s3Err) {
+            console.warn(`      ⚠️ S3 Physical copy failed for ${sourceId}: ${s3Err.message}. Metadata will link to original.`);
+        }
+    }
+
+    // Save metadata record
+    const newDocData = {
+        ...sourceDoc,
+        documentId: newId,
+        fileName: newFileName,
+        parentFolderId: targetFolderId,
+        uploadedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        createdAt: new Date(),
+        vectorCount: 0, // AI chunks not copied by default
+        chunkIds: [],
+        s3Key: newS3Key,
+        s3Url: newS3Url,
+        publicUrl: newS3Url, // Matching requested schema
+        isStarred: false,
+        isTrashed: false
+    };
+    delete newDocData.id;
+    await saveDocument(newDocData);
+
+    // Recursive step for folders
+    if (sourceDoc.isFolder) {
+        const { getFirestore } = require('../config/firebase.config');
+        const db = getFirestore();
+        const children = await db.collection('files')
+            .where('userId', '==', userId)
+            .where('parentFolderId', '==', sourceId)
+            .get();
+
+        console.log(`      📁 Folder Copy: Found ${children.size} children in ${sourceDoc.fileName}`);
+
+        for (const childDoc of children.docs) {
+            await performRecursiveCopy(userId, childDoc.id, newId, false);
+        }
+    }
+
+    return newId;
+}
+
+/**
+ * Retry thumbnail generation for a specific document
+ * POST /api/secure/documents/:id/retry-thumbnail
+ */
+router.post('/:id/retry-thumbnail',
+    verifyFirebaseToken,
+    checkDocumentAccess(),
+    async (req, res) => {
+        const userId = req.user.uid;
+        const documentId = req.params.id;
+
+        try {
+            const document = await getDocument(documentId);
+            if (!document) return res.status(404).json({ success: false, message: 'Document not found' });
+
+            // Queue the job
+            queueThumbnailJob({
+                filePath: document.storagePath,
+                documentId,
+                userId: document.userId || userId,
+                fileType: document.fileType,
+                fileName: document.fileName,
+                s3Key: document.s3Key
+            });
+
+            // Update status to processing
+            await updateDocumentStatus(documentId, 'processing', {
+                thumbnailStatus: 'processing',
+                thumbnailError: null
+            });
+
+            res.json({ success: true, message: 'Thumbnail generation queued' });
+        } catch (error) {
+            console.error(`❌ Retry thumbnail failed: ${error.message}`);
+            res.status(500).json({ success: false, message: error.message });
+        }
+    }
+);
+
+
 module.exports = router;
+

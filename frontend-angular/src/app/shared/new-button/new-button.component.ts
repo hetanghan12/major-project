@@ -8,12 +8,12 @@ import { Component, Output, EventEmitter, signal, ElementRef, HostListener } fro
 import { CommonModule } from '@angular/common';
 
 @Component({
-    selector: 'app-new-button',
     standalone: true,
+    selector: 'app-new-button',
     imports: [CommonModule],
     template: `
-        <div class="new-button-wrapper">
-            <button class="new-btn" (click)="toggleDropdown()">
+        <div class="new-button-wrapper" (click)="$event.stopPropagation()">
+            <button class="new-btn" type="button" (click)="toggleDropdown()">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
                 </svg>
@@ -25,7 +25,7 @@ import { CommonModule } from '@angular/common';
 
             <div class="new-dropdown" *ngIf="isOpen()">
                 <!-- Create Folder -->
-                <button class="new-dropdown-item" (click)="onCreate('folder', $event)">
+                <button class="new-dropdown-item" type="button" (click)="onCreate('folder', $event)">
                     <div class="new-dropdown-icon folder">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
@@ -38,7 +38,7 @@ import { CommonModule } from '@angular/common';
                 <div class="new-dropdown-divider"></div>
 
                 <!-- File Upload -->
-                <button class="new-dropdown-item" (click)="onCreate('file-upload', $event)">
+                <button class="new-dropdown-item" type="button" (click)="onCreate('file-upload', $event)">
                     <div class="new-dropdown-icon upload">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
@@ -48,37 +48,7 @@ import { CommonModule } from '@angular/common';
                     <span>File upload</span>
                 </button>
 
-                <!-- Folder Upload -->
-                <button class="new-dropdown-item" (click)="onCreate('folder-upload', $event)">
-                    <div class="new-dropdown-icon upload">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                                  d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
-                        </svg>
-                    </div>
-                    <span>Folder upload</span>
-                </button>
 
-                <div class="new-dropdown-divider"></div>
-
-                <!-- Google Docs (placeholder) -->
-                <button class="new-dropdown-item" (click)="onCreate('google-docs', $event)">
-                    <div class="new-dropdown-icon docs">
-                        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M14,2H6C4.9,2,4,2.9,4,4v16c0,1.1,0.9,2,2,2h12c1.1,0,2-0.9,2-2V8L14,2z M16,18H8v-2h8V18z M16,14H8v-2h8V14z M13,9V3.5 L18.5,9H13z"/>
-                        </svg>
-                    </div>
-                    <span>Document</span>
-                </button>
-
-                <button class="new-dropdown-item" (click)="onCreate('google-sheets', $event)">
-                    <div class="new-dropdown-icon sheets">
-                        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M19,11V9h-6V5h-2v4H5v2h6v10h2V11H19z M19,3H5C3.9,3,3,3.9,3,5v14c0,1.1,0.9,2,2,2h14c1.1,0,2-0.9,2-2V5 C21,3.9,20.1,3,19,3z"/>
-                        </svg>
-                    </div>
-                    <span>Spreadsheet</span>
-                </button>
             </div>
         </div>
 
@@ -88,16 +58,9 @@ import { CommonModule } from '@angular/common';
             type="file" 
             class="hidden" 
             multiple 
-            accept=".pdf,.docx,.doc,.xlsx,.xls,.pptx,.ppt,.txt,.jpg,.jpeg,.png,.mp3,.wav"
+            accept=".pdf,.docx,.doc,.xlsx,.xls,.pptx,.ppt,.txt,.jpg,.jpeg,.png,.mp3,.wav,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain,image/*,audio/*"
             (change)="onFileSelected($event)"/>
         
-        <input 
-            #folderInput 
-            type="file" 
-            class="hidden" 
-            webkitdirectory 
-            directory
-            (change)="onFolderSelected($event)"/>
     `,
     styles: [`
         .new-button-wrapper {
@@ -109,19 +72,19 @@ import { CommonModule } from '@angular/common';
             align-items: center;
             gap: 8px;
             padding: 12px 20px;
-            background: white;
-            border: 1px solid #e5e7eb;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
             border-radius: 24px;
             font-weight: 500;
             font-size: 14px;
-            color: #374151;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            color: var(--text-primary);
+            box-shadow: var(--shadow-sm);
             transition: all 0.2s;
         }
 
         .new-btn:hover {
-            background: #f3f4f6;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            background: var(--bg-elevated);
+            box-shadow: var(--shadow-md);
         }
 
         .new-dropdown {
@@ -130,10 +93,10 @@ import { CommonModule } from '@angular/common';
             left: 0;
             margin-top: 8px;
             min-width: 260px;
-            background: white;
+            background: var(--bg-card);
             border-radius: 12px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
-            border: 1px solid #e5e7eb;
+            box-shadow: var(--shadow-lg);
+            border: 1px solid var(--border-color);
             padding: 8px 0;
             z-index: 50;
             animation: dropdownFade 0.15s ease-out;
@@ -151,13 +114,13 @@ import { CommonModule } from '@angular/common';
             width: 100%;
             padding: 12px 20px;
             font-size: 14px;
-            color: #374151;
+            color: var(--text-primary);
             transition: background 0.15s;
             text-align: left;
         }
 
         .new-dropdown-item:hover {
-            background: #f3f4f6;
+            background: var(--bg-elevated);
         }
 
         .new-dropdown-icon {
@@ -191,7 +154,7 @@ import { CommonModule } from '@angular/common';
 
         .new-dropdown-divider {
             height: 1px;
-            background: #e5e7eb;
+            background: var(--border-color);
             margin: 8px 0;
         }
 
@@ -233,16 +196,8 @@ export class NewButtonComponent {
                 this.createFolder.emit();
                 break;
             case 'file-upload':
-                const fileInput = this.elementRef.nativeElement.querySelector('input[type="file"]:not([webkitdirectory])');
+                const fileInput = this.elementRef.nativeElement.querySelector('input[type="file"]');
                 fileInput?.click();
-                break;
-            case 'folder-upload':
-                const folderInput = this.elementRef.nativeElement.querySelector('input[webkitdirectory]');
-                folderInput?.click();
-                break;
-            case 'google-docs':
-            case 'google-sheets':
-                this.createDocument.emit(type);
                 break;
         }
     }

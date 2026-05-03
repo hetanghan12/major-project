@@ -6,7 +6,7 @@
  * @author College Project
  */
 
-const { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadObjectCommand } = require('@aws-sdk/client-s3');
+const { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadObjectCommand, CopyObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const fs = require('fs');
 const path = require('path');
@@ -148,6 +148,35 @@ async function getFileBuffer(s3Key) {
 }
 
 /**
+ * Get a readable stream for a file in S3
+ * @param {string} s3Key - S3 object key
+ * @returns {Promise<Object>} { stream, contentType, contentLength }
+ */
+async function getDownloadStream(s3Key) {
+    initS3Service();
+
+    console.log(`📥 Opening download stream from S3: ${s3Key}`);
+
+    try {
+        const command = new GetObjectCommand({
+            Bucket: bucketName,
+            Key: s3Key
+        });
+
+        const response = await s3Client.send(command);
+
+        return {
+            stream: response.Body,
+            contentType: response.ContentType,
+            contentLength: response.ContentLength
+        };
+    } catch (error) {
+        console.error(`   ❌ S3 Stream failed: ${error.message}`);
+        throw error;
+    }
+}
+
+/**
  * Delete a file from S3
  * @param {string} s3Key - S3 object key to delete
  */
@@ -196,6 +225,31 @@ async function fileExistsInS3(s3Key) {
     }
 }
 
+async function copyS3Object(sourceKey, targetKey) {
+    initS3Service();
+    console.log(`📋 Copying in S3: ${sourceKey} -> ${targetKey}`);
+
+    try {
+        const command = new CopyObjectCommand({
+            Bucket: bucketName,
+            CopySource: `${bucketName}/${sourceKey}`,
+            Key: targetKey
+        });
+
+        await s3Client.send(command);
+        console.log(`   ✅ S3 Copy complete`);
+
+        return {
+            success: true,
+            s3Key: targetKey,
+            s3Url: `https://${bucketName}.s3.${process.env.AWS_REGION}.amazonaws.com/${targetKey}`
+        };
+    } catch (error) {
+        console.error(`   ❌ S3 Copy failed: ${error.message}`);
+        throw error;
+    }
+}
+
 /**
  * Generate S3 key for a user's document
  * @param {string} userId - User ID
@@ -214,7 +268,9 @@ module.exports = {
     uploadToS3,
     getDownloadUrl,
     getFileBuffer,
+    getDownloadStream,
     deleteFromS3,
     fileExistsInS3,
-    generateS3Key
+    generateS3Key,
+    copyS3Object
 };

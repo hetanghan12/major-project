@@ -9,8 +9,8 @@ import { CommonModule } from '@angular/common';
 import { BreadcrumbItem } from '../../core/models/file.model';
 
 @Component({
-    selector: 'app-breadcrumb',
     standalone: true,
+    selector: 'app-breadcrumb',
     imports: [CommonModule],
     template: `
         <nav class="breadcrumb">
@@ -59,27 +59,27 @@ import { BreadcrumbItem } from '../../core/models/file.model';
             border-radius: 8px;
             font-size: 14px;
             font-weight: 500;
-            color: #374151;
+            color: var(--text-secondary);
             transition: background 0.15s;
         }
 
         .breadcrumb-item:hover:not(.current):not(:disabled) {
-            background: #f3f4f6;
+            background: var(--bg-elevated);
         }
 
         .breadcrumb-item.root {
-            color: #5b4ee8;
+            color: var(--primary);
         }
 
         .breadcrumb-item.current {
-            color: #1f2937;
+            color: var(--text-primary);
             cursor: default;
         }
 
         .breadcrumb-separator {
             width: 16px;
             height: 16px;
-            color: #9ca3af;
+            color: var(--text-muted);
             flex-shrink: 0;
         }
 

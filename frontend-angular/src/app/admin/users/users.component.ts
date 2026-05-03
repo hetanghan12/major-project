@@ -4,8 +4,8 @@ import { FormsModule } from '@angular/forms';
 import { AdminService } from '../../core/services/admin.service';
 
 @Component({
-  selector: 'app-admin-users',
   standalone: true,
+  selector: 'app-admin-users',
   imports: [CommonModule, FormsModule],
   template: `
     <div class="h-full w-full flex flex-col">
@@ -15,12 +15,7 @@ import { AdminService } from '../../core/services/admin.service';
           <h1 class="text-2xl font-bold text-gray-900">User Management</h1>
           <p class="text-sm text-gray-500 mt-1">{{ users.length }} of {{ users.length }} users shown</p>
         </div>
-        <button class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-          </svg>
-          Add New User
-        </button>
+
       </div>
 
       <!-- FILTER BAR -->
@@ -61,6 +56,7 @@ import { AdminService } from '../../core/services/admin.service';
           <thead class="bg-gray-50 text-xs font-semibold uppercase tracking-wider text-gray-500 sticky top-0 border-b border-gray-200 z-10">
             <tr>
               <th class="px-6 py-4">User</th>
+              <th class="px-6 py-4">User ID</th>
               <th class="px-6 py-4">Role</th>
               <th class="px-6 py-4">Status</th>
               <th class="px-6 py-4">Joined</th>
@@ -83,12 +79,16 @@ import { AdminService } from '../../core/services/admin.service';
                 </div>
               </td>
               
+              <!-- USER ID COLUMN -->
+              <td class="px-6 py-4 text-xs font-mono text-gray-400">
+                {{ user.uid }}
+              </td>
+
               <!-- ROLE COLUMN -->
               <td class="px-6 py-4">
                 <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
                   {{ user.role || 'User' }}
                 </span>
-                <!-- Kept the select visually hidden but usable to preserve logic, or just make it standard text. We use text layout first -->
               </td>
               
               <!-- STATUS COLUMN -->
@@ -111,7 +111,7 @@ import { AdminService } from '../../core/services/admin.service';
               
               <!-- ACTIONS COLUMN -->
               <td class="px-6 py-4 text-right text-sm font-medium">
-                <div class="flex items-center justify-end gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div class="flex items-center justify-end gap-2">
                   <button *ngIf="user.isLocked" (click)="unlockUser(user)" class="text-emerald-600 hover:text-emerald-900 transition-colors" title="Unlock User">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"/></svg>
                   </button>
@@ -139,6 +139,62 @@ import { AdminService } from '../../core/services/admin.service';
       </div>
     </div>
 
+    <!-- EDIT USER MODAL -->
+    <div *ngIf="isEditModalOpen" class="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+        <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+          <h3 class="text-lg font-bold text-gray-900">Edit Permissions</h3>
+          <button (click)="closeEditModal()" class="text-gray-400 hover:text-gray-600 p-1">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+          </button>
+        </div>
+        
+        <div class="p-6 space-y-6">
+          <div class="flex items-center gap-4 p-4 bg-indigo-50/50 rounded-xl border border-indigo-100/50">
+            <div class="h-12 w-12 rounded-full flex items-center justify-center font-bold text-xl" [ngClass]="getAvatarColorClass(editingUser?.displayName || editingUser?.email)">
+              {{ (editingUser?.displayName || editingUser?.email || 'U')[0].toUpperCase() }}
+            </div>
+            <div>
+              <div class="font-bold text-gray-900">{{ editingUser?.displayName || 'Unnamed User' }}</div>
+              <div class="text-xs text-indigo-600 font-medium">{{ editingUser?.email }}</div>
+            </div>
+          </div>
+
+
+          <div>
+            <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Account Status</label>
+            <div class="grid grid-cols-2 gap-2">
+              <button 
+                (click)="editingUser.status = 'Active'"
+                [class.bg-emerald-600]="editingUser.status === 'Active'"
+                [class.text-white]="editingUser.status === 'Active'"
+                class="px-3 py-2 text-sm font-bold border rounded-xl bg-white border-gray-200 transition-all shadow-sm"
+              >
+                Active
+              </button>
+              <button 
+                (click)="editingUser.status = 'Suspended'"
+                [class.bg-red-600]="editingUser.status === 'Suspended'"
+                [class.text-white]="editingUser.status === 'Suspended'"
+                class="px-3 py-2 text-sm font-bold border rounded-xl bg-white border-gray-200 transition-all shadow-sm"
+              >
+                Suspend
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex gap-3">
+          <button (click)="closeEditModal()" class="flex-1 px-4 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-xl font-bold text-sm hover:bg-gray-50 transition-colors">
+            Cancel
+          </button>
+          <button (click)="saveUserChanges()" class="flex-1 px-4 py-2.5 bg-indigo-600 text-white rounded-xl font-bold text-sm hover:bg-indigo-700 shadow-md shadow-indigo-500/20 transition-colors">
+            Save Changes
+          </button>
+        </div>
+      </div>
+    </div>
+
     <ng-template #spinner>
       <div class="flex justify-center items-center h-64">
         <svg class="animate-spin h-8 w-8 text-indigo-600" fill="none" viewBox="0 0 24 24">
@@ -160,6 +216,10 @@ export class AdminUsersComponent implements OnInit {
   users: any[] = [];
   loading = true;
   searchQuery = '';
+  
+  // Edit Modal State
+  isEditModalOpen = false;
+  editingUser: any = null;
 
   ngOnInit() {
     this.loadUsers();
@@ -187,11 +247,34 @@ export class AdminUsersComponent implements OnInit {
   }
 
   editUser(user: any) {
-    // In a real implementation this would open a modal to edit
-    // For now we just cycle the role to demonstrate functionality
-    const nextRole = user.role === 'Admin' ? 'User' : (user.role === 'Editor' ? 'Admin' : 'Editor');
-    user.role = nextRole;
-    this.updateUser(user);
+    this.editingUser = { ...user };
+    this.isEditModalOpen = true;
+  }
+
+  closeEditModal() {
+    this.isEditModalOpen = false;
+    this.editingUser = null;
+  }
+
+  async saveUserChanges() {
+    if (!this.editingUser) return;
+    
+    try {
+      await this.adminService.updateUser(this.editingUser.uid, { 
+        status: this.editingUser.status 
+      });
+      
+      // Update local state
+      const index = this.users.findIndex(u => u.uid === this.editingUser.uid);
+      if (index !== -1) {
+        this.users[index] = { ...this.users[index], ...this.editingUser };
+      }
+      
+      this.closeEditModal();
+    } catch (err) {
+      console.error('Update failed', err);
+      alert('Failed to update user permissions');
+    }
   }
 
   async updateUser(user: any) {

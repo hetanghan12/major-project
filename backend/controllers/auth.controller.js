@@ -7,11 +7,12 @@
  */
 
 const { getAuth } = require('../config/firebase.config');
-const { createOrUpdateUser, getUser } = require('../services/firestore.service');
+const { createOrUpdateUser, getUser, getUserByEmail } = require('../services/firestore.service');
 const { getFirestore } = require('../config/firebase.config');
 const { activatePendingShares } = require('../services/share.service');
 const { asyncHandler, ApiError } = require('../middlewares/error.middleware');
 const { logSecurityEvent, trackNewUser } = require('../services/analytics.service');
+const { initializeAiUsage } = require('../services/ai-usage.service');
 
 /**
  * Verify Firebase ID token and return user info
@@ -58,6 +59,11 @@ const getProfile = asyncHandler(async (req, res) => {
             email,
             displayName: name || null,
             photoURL: picture || null,
+            plan: 'free',
+            storageUsed: 0,
+            aiRequestsUsed: 0,
+            aiRequestsResetDate: new Date().toISOString(),
+            mfaEnabled: false,
             createdAt: new Date().toISOString()
         };
     }
@@ -83,6 +89,10 @@ const getProfile = asyncHandler(async (req, res) => {
         }
     }
 
+    // Use the storage quota service's normalization and recovery logic
+    const { getEffectivePlan } = require('../services/storage-quota.service');
+    userProfile.plan = await getEffectivePlan(uid, userProfile);
+
     res.json({
         success: true,
         user: userProfile
@@ -97,6 +107,13 @@ const getProfile = asyncHandler(async (req, res) => {
  * In production, this should be disabled or secured.
  */
 const createTestUser = asyncHandler(async (req, res) => {
+    const testEndpointEnabled = process.env.ENABLE_TEST_USER_ENDPOINT === 'true';
+    const isProduction = process.env.NODE_ENV === 'production';
+
+    if (isProduction || !testEndpointEnabled) {
+        throw new ApiError(404, 'Not found');
+    }
+
     // Default test user credentials
     const TEST_EMAIL = process.env.TEST_USER_EMAIL || 'testuser@collegeproject.com';
     const TEST_PASSWORD = process.env.TEST_USER_PASSWORD || 'Test@12345';
@@ -169,6 +186,8 @@ const createTestUser = asyncHandler(async (req, res) => {
  * This also initializes/verifies the user's Pinecone namespace
  * Each user gets their own isolated namespace for vector storage
  */
+const { getEffectivePlan } = require('../services/storage-quota.service');
+
 const syncUser = asyncHandler(async (req, res) => {
     const { uid, email, name, picture } = req.user;
 
@@ -186,6 +205,17 @@ const syncUser = asyncHandler(async (req, res) => {
     // Track new user in aggregated stats (non-blocking)
     if (isNewUser) {
         trackNewUser().catch(err => console.error('trackNewUser failed:', err.message));
+        
+        // Trigger admin notification for new signup
+        const { createAdminNotification } = require('../services/notification.service');
+        createAdminNotification({
+            type: 'USER_SIGNUP',
+            message: `New user signed up: ${email}`,
+            details: { email, name, uid }
+        }).catch(err => console.error('Admin signup notification failed:', err.message));
+
+        // Initialize AI Usage tracking (NEW)
+        initializeAiUsage(uid, userProfile.plan || 'free').catch(err => console.error('AI Usage init failed:', err.message));
     }
 
     // Initialize/verify user's Pinecone namespace
@@ -204,7 +234,17 @@ const syncUser = asyncHandler(async (req, res) => {
     // Reset login failures for this email
     try {
         const firestore = getFirestore();
+        // 1. Clear legacy login locks
         await firestore.collection('login_locks').doc(email).delete();
+
+        // 2. Reset fields in user document (as per new requirements)
+        await firestore.collection('users').doc(uid).update({
+            failedLoginAttempts: 0,
+            accountLockedUntil: null
+        }).catch(err => {
+            // Document might not have these fields yet or exist, ignore fail if it's just missing fields
+            if (!err.message.includes('NOT_FOUND')) console.warn('Could not reset login failure fields:', err.message);
+        });
 
         // ==========================================
         // Log to NEW security_logs collection
@@ -221,6 +261,10 @@ const syncUser = asyncHandler(async (req, res) => {
         console.error('Failed to clear login locks or log audit:', e);
     }
 
+    // CRITICAL: Ensure we return the correct "Effective Plan" even during sync
+    const effectivePlan = await getEffectivePlan(uid, userProfile);
+    userProfile.plan = effectivePlan;
+
     res.json({
         success: true,
         message: 'User synced successfully',
@@ -230,6 +274,11 @@ const syncUser = asyncHandler(async (req, res) => {
             vectorCount: pineconeNamespace.vectorCount,
             exists: pineconeNamespace.exists
         } : null,
+        securitySettings: await (async () => {
+            const firestore = getFirestore();
+            const doc = await firestore.collection('system_settings').doc('global').get();
+            return doc.exists ? (doc.data().securitySettings || {}) : {};
+        })(),
         pendingSharesActivated: 0
     });
 
@@ -252,44 +301,73 @@ const failLogin = asyncHandler(async (req, res) => {
     if (!email) throw new ApiError(400, 'Email is required');
 
     const firestore = getFirestore();
+    
+    // 1. Get Security Settings
     const settingsDoc = await firestore.collection('system_settings').doc('global').get();
-    const maxAttempts = settingsDoc.exists ? (settingsDoc.data().maxLoginAttempts || 5) : 5;
-    const sessionTimeout = settingsDoc.exists ? (settingsDoc.data().sessionTimeout || 60) : 60; // in minutes
+    const settings = settingsDoc.exists ? settingsDoc.data() : {};
+    
+    // Use new securitySettings structure, fallback to legacy for safety
+    const security = settings.securitySettings || {};
+    const maxAttempts = security.maxLoginAttempts || settings.maxLoginAttempts || 5;
+    const lockDuration = security.lockDurationMinutes || settings.sessionTimeout || 15;
 
+    // 2. Find User Document (if exists)
+    const user = await getUserByEmail(email);
+    let failures = 1;
+    let locked = false;
+
+    if (user) {
+        // Increment failures in User Document
+        failures = (user.failedLoginAttempts || 0) + 1;
+        const updates = {
+            failedLoginAttempts: failures,
+            lastLoginFailure: new Date().toISOString()
+        };
+
+        if (failures >= maxAttempts) {
+            updates.accountLockedUntil = new Date(Date.now() + lockDuration * 60000).toISOString();
+            locked = true;
+        }
+
+        await firestore.collection('users').doc(user.id).set(updates, { merge: true });
+    }
+
+    // 3. Update legacy login_locks for safety/backward compatibility
     const lockRef = firestore.collection('login_locks').doc(email);
     const lockDoc = await lockRef.get();
-
-    let failures = 1;
-
-    if (lockDoc.exists) {
+    if (!user && lockDoc.exists) {
         failures = (lockDoc.data().failures || 0) + 1;
     }
 
-    const updates = {
+    const lockUpdates = {
         email,
         failures,
         lastFailure: new Date().toISOString(),
         ip: req.ip || req.connection.remoteAddress
     };
+    if (failures >= maxAttempts) {
+        lockUpdates.lockedUntil = new Date(Date.now() + lockDuration * 60000).toISOString();
+        locked = true;
+    }
+    await lockRef.set(lockUpdates, { merge: true });
 
-    // Log LOGIN_FAILED to security_logs
-    const { logSecurityEvent } = require('../services/analytics.service');
+    // 4. Log security event
     await logSecurityEvent({
         eventType: 'LOGIN_FAILED',
-        userId: 'N/A',
+        userId: user ? user.id : 'N/A',
         email: email,
         ipAddress: req.ip || req.connection.remoteAddress,
         action: `Failed login attempt for ${email} (Failures: ${failures})`,
-        status: 'FAILED'
+        status: 'FAILED',
+        details: { locked }
     });
 
-    if (failures >= maxAttempts) {
-        updates.lockedUntil = new Date(Date.now() + sessionTimeout * 60000).toISOString();
-    }
-
-    await lockRef.set(updates, { merge: true });
-
-    res.json({ success: true, message: 'Failed login recorded', locked: failures >= maxAttempts });
+    res.json({ 
+        success: true, 
+        message: locked ? 'Too many failed login attempts. Please try again later.' : 'Failed login recorded', 
+        locked, 
+        failures 
+    });
 });
 
 /**
@@ -300,19 +378,45 @@ const getLockoutStatus = asyncHandler(async (req, res) => {
     const { email } = req.params;
     if (!email) throw new ApiError(400, 'Email is required');
 
-    const firestore = getFirestore();
-    const lockDoc = await firestore.collection('login_locks').doc(email).get();
+    const normalizedEmail = String(email).trim().toLowerCase();
+    const requesterEmail = String(req.user?.email || '').trim().toLowerCase();
+    const isEnvAdmin = !!process.env.ADMIN_EMAIL && requesterEmail === String(process.env.ADMIN_EMAIL).trim().toLowerCase();
 
-    if (!lockDoc.exists) {
-        return res.json({ success: true, locked: false });
+    if (normalizedEmail !== requesterEmail && !isEnvAdmin) {
+        throw new ApiError(403, 'Forbidden');
     }
 
-    const data = lockDoc.data();
-    if (data.lockedUntil && new Date(data.lockedUntil).getTime() > Date.now()) {
+    const firestore = getFirestore();
+    
+    // Check both user doc and legacy lock doc
+    const [user, lockDoc] = await Promise.all([
+        getUserByEmail(normalizedEmail),
+        firestore.collection('login_locks').doc(normalizedEmail).get()
+    ]);
+
+    let locked = false;
+    let lockedUntil = null;
+
+    // Check modern user doc first
+    if (user && user.accountLockedUntil && new Date(user.accountLockedUntil).getTime() > Date.now()) {
+        locked = true;
+        lockedUntil = user.accountLockedUntil;
+    } 
+    // Fallback to legacy lock doc
+    else if (lockDoc.exists) {
+        const data = lockDoc.data();
+        if (data.lockedUntil && new Date(data.lockedUntil).getTime() > Date.now()) {
+            locked = true;
+            lockedUntil = data.lockedUntil;
+        }
+    }
+
+    if (locked) {
         return res.json({
             success: true,
             locked: true,
-            lockedUntil: data.lockedUntil
+            lockedUntil,
+            message: 'Too many failed login attempts. Please try again later.'
         });
     }
 

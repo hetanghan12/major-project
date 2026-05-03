@@ -29,6 +29,7 @@ const {
     revokeShare,
     revokeAllSharesForResource
 } = require('../services/share.service');
+const { checkSharePermission } = require('../services/storage-quota.service');
 
 // =============================================================================
 // CREATE SHARES
@@ -40,7 +41,7 @@ const {
  * 
  * Body: {
  *   resourceId: string,
- *   recipients: [{ email: string, permission: 'view'|'edit'|'download' }],
+ *   recipients: [{ email: string, permission: 'view'|'download' }],
  *   message?: string
  * }
  */
@@ -61,10 +62,19 @@ router.post('/', verifyFirebaseToken, async (req, res) => {
             return res.status(400).json({ success: false, message: 'Maximum 20 recipients per request' });
         }
 
-        // Validate each recipient has an email
+        // Validate each recipient has an email and allowed permission
         for (const r of recipients) {
             if (!r.email || typeof r.email !== 'string' || !r.email.includes('@')) {
                 return res.status(400).json({ success: false, message: `Invalid email: ${r.email}` });
+            }
+            
+            // Plan-based permission validation
+            const permissionCheck = await checkSharePermission(userId, r.permission || 'view');
+            if (!permissionCheck.allowed) {
+                return res.status(403).json({ 
+                    success: false, 
+                    message: permissionCheck.message 
+                });
             }
         }
 
@@ -170,7 +180,7 @@ router.get('/resource/:resourceId', verifyFirebaseToken, async (req, res) => {
  * PATCH /api/secure/shares/:shareId/permission
  * Change the permission on an existing share (owner only)
  * 
- * Body: { permission: 'view'|'edit'|'download' }
+ * Body: { permission: 'view'|'download' }
  */
 router.patch('/:shareId/permission', verifyFirebaseToken, async (req, res) => {
     try {
@@ -180,6 +190,15 @@ router.patch('/:shareId/permission', verifyFirebaseToken, async (req, res) => {
 
         if (!permission) {
             return res.status(400).json({ success: false, message: 'permission is required' });
+        }
+
+        // Plan-based permission validation
+        const permissionCheck = await checkSharePermission(userId, permission);
+        if (!permissionCheck.allowed) {
+            return res.status(403).json({ 
+                success: false, 
+                message: permissionCheck.message 
+            });
         }
 
         const updated = await updateSharePermission(shareId, userId, permission);

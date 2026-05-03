@@ -2,30 +2,73 @@
  * Firebase Authentication Middleware
  * ====================================
  * Verifies Firebase ID tokens on protected routes.
- * 
+ *
  * SECURITY: Every protected request must include a valid Firebase ID token
  * in the Authorization header as "Bearer <token>"
- * 
+ *
  * @author College Project
  */
 
 const { getAuth, getFirestore } = require('../config/firebase.config');
 
+function buildRequestUser(decodedToken) {
+    return {
+        uid: decodedToken.uid,
+        email: decodedToken.email,
+        emailVerified: decodedToken.email_verified,
+        name: decodedToken.name || null,
+        picture: decodedToken.picture || null
+    };
+}
 
+function extractBearerToken(authHeader) {
+    if (!authHeader || typeof authHeader !== 'string' || !authHeader.startsWith('Bearer ')) {
+        return null;
+    }
+
+    const token = authHeader.slice('Bearer '.length).trim();
+    return token || null;
+}
+
+function extractFirebaseToken(req, { allowQueryToken = false } = {}) {
+    const headerToken = extractBearerToken(req.headers.authorization);
+    if (headerToken) {
+        return headerToken;
+    }
+
+    if (allowQueryToken && typeof req.query?.token === 'string' && req.query.token.trim()) {
+        return req.query.token.trim();
+    }
+
+    return null;
+}
+
+async function decodeFirebaseToken(idToken) {
+    if (!idToken) {
+        const error = new Error('No token provided in authorization header');
+        error.code = 'auth/argument-error';
+        throw error;
+    }
+
+    const auth = getAuth();
+    return auth.verifyIdToken(idToken);
+}
+
+async function attachUserToRequest(req, idToken) {
+    const decodedToken = await decodeFirebaseToken(idToken);
+    req.user = buildRequestUser(decodedToken);
+    return req.user;
+}
 
 /**
  * Middleware to verify Firebase ID token
  * Extracts user information and attaches it to req.user
  */
 async function verifyFirebaseToken(req, res, next) {
-    // START DEBUG LOGGING
-    console.log(`[AUTH] Verifying token for path: ${req.path}`);
-
     try {
-        const authHeader = req.headers.authorization;
+        console.log(`[AUTH] Verifying token for path: ${req.path}`);
 
-        // Check if authorization header exists
-        if (!authHeader) {
+        if (!req.headers.authorization) {
             console.log('[AUTH] No authorization header found');
             return res.status(401).json({
                 success: false,
@@ -33,8 +76,7 @@ async function verifyFirebaseToken(req, res, next) {
             });
         }
 
-        // Check if it's a Bearer token
-        if (!authHeader.startsWith('Bearer ')) {
+        if (!extractBearerToken(req.headers.authorization)) {
             console.log('[AUTH] Invalid header format');
             return res.status(401).json({
                 success: false,
@@ -42,38 +84,14 @@ async function verifyFirebaseToken(req, res, next) {
             });
         }
 
-        // Extract the token
-        const idToken = authHeader.split('Bearer ')[1];
-
-        if (!idToken) {
-            console.log('[AUTH] No token in header');
-            return res.status(401).json({
-                success: false,
-                message: 'No token provided in authorization header'
-            });
-        }
-
-        // Verify the token with Firebase
-        const auth = getAuth();
-        const decodedToken = await auth.verifyIdToken(idToken);
-        console.log(`[AUTH] Token verified for UID: ${decodedToken.uid}`);
-
-        // Attach user information to request object
-        req.user = {
-            uid: decodedToken.uid,
-            email: decodedToken.email,
-            emailVerified: decodedToken.email_verified,
-            name: decodedToken.name || null,
-            picture: decodedToken.picture || null
-        };
+        const idToken = extractFirebaseToken(req);
+        await attachUserToRequest(req, idToken);
 
         console.log(`✅ Authenticated user: ${req.user.email} (${req.user.uid})`);
         next();
-
     } catch (error) {
         console.error('❌ Token verification failed:', error.message);
 
-        // Handle specific Firebase auth errors
         if (error.code === 'auth/id-token-expired') {
             return res.status(401).json({
                 success: false,
@@ -103,37 +121,68 @@ async function verifyFirebaseToken(req, res, next) {
     }
 }
 
+async function verifyFirebaseTokenOrQuery(req, res, next) {
+    try {
+        console.log(`[AUTH] Verifying token for path: ${req.path}`);
+
+        const idToken = extractFirebaseToken(req, { allowQueryToken: true });
+
+        if (!idToken) {
+            console.log('[AUTH] No token found in header or query');
+            return res.status(401).json({
+                success: false,
+                message: 'No authorization token provided'
+            });
+        }
+
+        await attachUserToRequest(req, idToken);
+
+        console.log(`✅ Authenticated user: ${req.user.email} (${req.user.uid})`);
+        next();
+    } catch (error) {
+        console.error('❌ Token verification failed:', error.message);
+
+        return res.status(401).json({
+            success: false,
+            message: 'Authentication failed',
+            error: error.message
+        });
+    }
+}
+
 /**
  * Optional authentication middleware
  * Sets req.user if token is valid, but doesn't block request if no token
  */
 async function optionalAuth(req, res, next) {
     try {
-        const authHeader = req.headers.authorization;
+        const idToken = extractFirebaseToken(req);
 
-        if (authHeader && authHeader.startsWith('Bearer ')) {
-            const idToken = authHeader.split('Bearer ')[1];
-
-            if (idToken) {
-                const auth = getAuth();
-                const decodedToken = await auth.verifyIdToken(idToken);
-
-                req.user = {
-                    uid: decodedToken.uid,
-                    email: decodedToken.email,
-                    emailVerified: decodedToken.email_verified,
-                    name: decodedToken.name || null,
-                    picture: decodedToken.picture || null
-                };
-            }
+        if (idToken) {
+            await attachUserToRequest(req, idToken);
         }
 
         next();
     } catch (error) {
-        // Silent failure for optional auth - just continue without user
         req.user = null;
         next();
     }
+}
+
+async function isAdminUser(user) {
+    if (!user || !user.email) {
+        return false;
+    }
+
+    const adminEmail = process.env.ADMIN_EMAIL?.toLowerCase();
+    if (adminEmail && user.email.toLowerCase() === adminEmail) {
+        return true;
+    }
+
+    const firestore = getFirestore();
+    const userDoc = await firestore.collection('users').doc(user.uid).get();
+
+    return !!(userDoc.exists && userDoc.data().role?.toLowerCase() === 'admin');
 }
 
 /**
@@ -145,16 +194,7 @@ async function isAdmin(req, res, next) {
             return res.status(401).json({ success: false, message: 'Unauthorized' });
         }
 
-        // Allow immediate access if email matches ADMIN_EMAIL from env or the hardcoded admin email
-        if ((process.env.ADMIN_EMAIL && req.user.email === process.env.ADMIN_EMAIL) || req.user.email === 'admin@cloudspace.com') {
-            return next();
-        }
-
-        // Check Firestore user role
-        const firestore = getFirestore();
-        const userDoc = await firestore.collection('users').doc(req.user.uid).get();
-
-        if (userDoc.exists && userDoc.data().role?.toLowerCase() === 'admin') {
+        if (await isAdminUser(req.user)) {
             return next();
         }
 
@@ -166,6 +206,10 @@ async function isAdmin(req, res, next) {
 
 module.exports = {
     verifyFirebaseToken,
+    verifyFirebaseTokenOrQuery,
     optionalAuth,
-    isAdmin
+    isAdmin,
+    isAdminUser,
+    decodeFirebaseToken,
+    buildRequestUser
 };
