@@ -92,6 +92,16 @@ const {
 // Error handler middleware
 const { errorHandler } = require('./middlewares/error.middleware');
 
+// Initialize Firebase IMMEDIATELY (required for auth and Firestore)
+try {
+  initializeFirebase();
+  console.log('✅ Firebase Admin SDK initialized successfully');
+} catch (error) {
+  console.error('\n❌ FATAL: Firebase initialization failed');
+  console.error(`   ${error.message}\n`);
+  process.exit(1);
+}
+
 // Create Express app
 const app = express();
 
@@ -109,7 +119,7 @@ let thumbnailRecoveryTimeout = null;
 let isShuttingDown = false;
 
 function parseAllowedOrigins() {
-  const defaults = isProduction ? [] : ['http://localhost:4200', 'http://localhost:3000'];
+  const defaults = isProduction ? [] : ['http://localhost:4200', 'http://localhost:3000', 'http://localhost:5000'];
   const envOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').map(o => o.trim()).filter(Boolean);
   return [...defaults, ...envOrigins];
 }
@@ -117,8 +127,18 @@ function parseAllowedOrigins() {
 const allowedOrigins = parseAllowedOrigins();
 
 function isOriginAllowed(origin) {
-  if (!origin) return false;
-  return allowedOrigins.includes(origin);
+  if (!origin) return true; // Allow non-browser requests (like status checks)
+  
+  // 1. Direct match from ALLOWED_ORIGINS env or defaults
+  if (allowedOrigins.includes(origin)) return true;
+
+  // 2. Allow Vercel preview and production domains
+  if (origin.endsWith('.vercel.app') || origin.includes('vercel.app')) {
+    console.log(`✅ CORS: Allowed Vercel origin: ${origin}`);
+    return true;
+  }
+
+  return false;
 }
 
 // Create uploads directory if it doesn't exist
@@ -1391,14 +1411,6 @@ async function startServer() {
   console.log('🚀 CLOUD SPACE BACKEND - STARTING');
   console.log('='.repeat(60) + '\n');
 
-  // Initialize Firebase first (required for auth and Firestore)
-  try {
-    initializeFirebase();
-    console.log('✅ Firebase initialized (Auth + Firestore)');
-  } catch (error) {
-    console.error('⚠️  Firebase initialization failed:', error.message);
-    console.log('   Authentication and metadata storage will fail');
-  }
 
   // Initialize AWS S3 for file storage
   try {

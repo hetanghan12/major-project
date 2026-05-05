@@ -1,6 +1,6 @@
 export const environment = {
     production: false,
-    apiUrl: 'http://localhost:5000/api',
+    apiUrl: 'https://major-project-ccvy.onrender.com/api',
     firebase: {
         apiKey: "AIzaSyCcvTyhcXlZ8cVcmAmb6vWd0eTkRZgaw4s",
         authDomain: "cloud-space-7802f.firebaseapp.com",

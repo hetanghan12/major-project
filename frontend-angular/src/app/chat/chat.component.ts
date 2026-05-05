@@ -15,6 +15,7 @@ import { ChatService, ChatMessage, ChatHistoryItem } from '../core/services/chat
 import { AuthService } from '../core/services/auth.service';
 import { DocumentService } from '../core/services/document.service';
 import { marked } from 'marked';
+import DOMPurify from 'dompurify';
 
 interface ChatSession {
   id: string;
@@ -801,21 +802,20 @@ export class ChatComponent implements OnInit {
   formatMessage(id: string, content: string): string {
     if (!content) return '';
 
-    // Memoization: if already parsed this specific message ID and content is the same, return cached.
     const cacheKey = `${id}_${content.length}`;
     if (this.parsedMessageCache.has(cacheKey)) {
       return this.parsedMessageCache.get(cacheKey)!;
     }
 
     try {
-      // In case n8n returned a string with literal string characters "\n" instead of actual newlines
       const processedContent = content.replace(/\\n/g, '\n');
       const parsed = marked.parse(processedContent) as string;
-      this.parsedMessageCache.set(cacheKey, parsed);
-      return parsed;
+      const sanitized = DOMPurify.sanitize(parsed);
+      this.parsedMessageCache.set(cacheKey, sanitized);
+      return sanitized;
     } catch (e) {
       console.error('Markdown parsing error:', e);
-      const fallback = content.replace(/\\n/g, '<br/>').replace(/\n/g, '<br/>');
+      const fallback = DOMPurify.sanitize(content.replace(/\\n/g, '<br/>').replace(/\n/g, '<br/>'));
       this.parsedMessageCache.set(cacheKey, fallback);
       return fallback;
     }

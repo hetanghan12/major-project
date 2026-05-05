@@ -28,28 +28,34 @@ function initializeFirebase() {
     }
 
     try {
-        // Load service account from config directory
-        const serviceAccountPath = process.env.FIREBASE_SERVICE_ACCOUNT_PATH
-            || path.join(__dirname, 'firebase-service-account.json');
-
-        // Check if service account file exists
-        if (!fs.existsSync(serviceAccountPath)) {
-            throw new Error(`Firebase service account file not found at: ${serviceAccountPath}. Please download it from Firebase Console → Project Settings → Service Accounts → Generate New Private Key.`);
-        }
-
-        // Read file content instead of using require (to avoid caching issues)
-        const serviceAccountContent = fs.readFileSync(serviceAccountPath, 'utf8');
+        // Load service account
         let serviceAccount;
 
-        try {
-            serviceAccount = JSON.parse(serviceAccountContent);
-        } catch (parseError) {
-            throw new Error(`Invalid JSON in Firebase service account file. Please re-download the file from Firebase Console.`);
-        }
+        // OPTION 1: From Environment Variable (Best for Render/Vercel)
+        if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+            try {
+                serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+                console.log('✅ Loading Firebase credentials from FIREBASE_SERVICE_ACCOUNT_JSON env var');
+            } catch (parseError) {
+                throw new Error('Invalid JSON in FIREBASE_SERVICE_ACCOUNT_JSON environment variable.');
+            }
+        } 
+        // OPTION 2: From File Path (Local development)
+        else {
+            const serviceAccountPath = process.env.FIREBASE_SERVICE_ACCOUNT_PATH
+                || path.join(__dirname, 'firebase-service-account.json');
 
-        // Validate required fields
-        if (!serviceAccount.project_id || !serviceAccount.private_key || !serviceAccount.client_email) {
-            throw new Error('Firebase service account file is missing required fields (project_id, private_key, client_email).');
+            if (!fs.existsSync(serviceAccountPath)) {
+                throw new Error(`Firebase service account file not found at: ${serviceAccountPath}. For production (Render), please set the FIREBASE_SERVICE_ACCOUNT_JSON environment variable.`);
+            }
+
+            const serviceAccountContent = fs.readFileSync(serviceAccountPath, 'utf8');
+            try {
+                serviceAccount = JSON.parse(serviceAccountContent);
+                console.log('✅ Loading Firebase credentials from file:', serviceAccountPath);
+            } catch (parseError) {
+                throw new Error(`Invalid JSON in Firebase service account file.`);
+            }
         }
 
         // Determine storage bucket

@@ -1,9 +1,21 @@
 import { Routes } from '@angular/router';
+import { LandingComponent } from './landing/landing.component';
 import { authGuard } from './core/guards/auth.guard';
 import { guestGuard } from './core/guards/guest.guard';
 import { adminGuard } from './core/guards/admin.guard';
 
 export const routes: Routes = [
+    // Public landing page
+    {
+        path: '',
+        component: LandingComponent,
+        pathMatch: 'full'
+    },
+    {
+        path: 'home',
+        component: LandingComponent
+    },
+
     // Authentication routes (accessible only when NOT logged in)
     {
         path: 'login',

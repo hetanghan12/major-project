@@ -18,6 +18,7 @@ import { AuthService, MfaLoginResult } from '../../core/services/auth.service';
 import { MultiFactorResolver } from 'firebase/auth';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
+import { environment } from '../../../environments/environment';
 
 @Component({
   standalone: true,
@@ -366,7 +367,7 @@ export class LoginComponent {
         return;
       }
       
-      const res: any = await firstValueFrom(this.http.get(`/api/auth/profile`, {
+      const res: any = await firstValueFrom(this.http.get(`${environment.apiUrl}/auth/profile`, {
         headers: { Authorization: `Bearer ${token}` }
       }));
       
