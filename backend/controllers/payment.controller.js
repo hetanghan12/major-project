@@ -21,6 +21,12 @@ try {
     };
 }
 
+const isProduction = process.env.NODE_ENV === 'production';
+
+if (isProduction && (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET)) {
+    console.error('❌ CRITICAL: Razorpay keys not configured for production');
+}
+
 const razorpay = new Razorpay({
     key_id: process.env.RAZORPAY_KEY_ID || 'rzp_test_dummy_key_123',
     key_secret: process.env.RAZORPAY_KEY_SECRET || 'dummy_secret_abc123',
@@ -186,7 +192,7 @@ exports.verifyPayment = async (req, res) => {
         });
     } catch (error) {
         console.error('Error in verifyPayment:', error);
-        res.status(500).json({ success: false, message: 'Payment fulfillment failed', error: error.message });
+        res.status(500).json({ success: false, message: 'Payment fulfillment failed' });
     }
 };
 

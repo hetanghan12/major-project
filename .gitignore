@@ -7,3 +7,15 @@ git_out.txt
 install_charts.js
 test_install.js
 .git/index.lock
+
+# Secrets & environment files
+.env
+.env.local
+.env.*.local
+backend/.env
+backend/.env.local
+backend/.env.*.local
+backend/config/firebase-service-account.json
+
+# Uploads directory
+backend/uploads/

@@ -18,8 +18,7 @@ router.get('/storage-activity', verifyFirebaseToken, isAdmin, analyticsControlle
 // NEW: Unified Admin Dashboard (Highly Optimized)
 router.get('/unified', verifyFirebaseToken, isAdmin, analyticsController.getUnifiedDashboard);
 
-// Log AI Usage (Usually called by n8n or backend AI services)
-// We might want to protect this via a secret key if called externally or via standard auth
-router.post('/ai-usage', analyticsController.logAiUsage);
+// Log AI Usage — requires authentication; userId is taken from verified token
+router.post('/ai-usage', verifyFirebaseToken, analyticsController.logAiUsage);
 
 module.exports = router;

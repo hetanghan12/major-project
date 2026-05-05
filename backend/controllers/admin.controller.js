@@ -260,7 +260,7 @@ exports.getAnalytics = async (req, res) => {
                 }
             });
         }
-        return res.status(500).json({ success: false, message: 'Failed to fetch analytics', error: error.message });
+        return res.status(500).json({ success: false, message: 'Failed to fetch analytics' });
     }
 };
 

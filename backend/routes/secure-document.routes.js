@@ -31,8 +31,8 @@ const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 
-// Import auth middleware - REQUIRED for all routes
 const { verifyFirebaseToken } = require('../middlewares/auth.middleware');
+const { validateFileContent } = require('../middlewares/file-validation.middleware');
 
 // Import services
 const { extractText, chunkText } = require('../services/textExtraction.service');
@@ -318,8 +318,9 @@ async function isActive(documentId) {
  * - Returns uploadId for SSE progress subscription
  */
 router.post('/upload',
-    verifyFirebaseToken,  // MANDATORY: Authenticate first
+    verifyFirebaseToken,
     upload.single('file'),
+    validateFileContent,
     async (req, res) => {
         // SECURITY: userId from verified token ONLY
         const userId = req.user.uid;

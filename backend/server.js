@@ -31,6 +31,7 @@ const fs = require('fs');
 const rateLimit = require('express-rate-limit');
 const compression = require('compression');
 const morgan = require('morgan');
+const crypto = require('crypto');
 const { Pinecone } = require('@pinecone-database/pinecone');
 
 // Text extraction libraries
@@ -83,7 +84,6 @@ const analyticsRoutes = require('./routes/analytics.routes');
 const notificationRoutes = require('./routes/notification.routes');
 const {
   verifyFirebaseToken,
-  verifyFirebaseTokenOrQuery,
   isAdmin,
   isAdminUser
 } = require('./middlewares/auth.middleware');
@@ -109,17 +109,15 @@ let thumbnailRecoveryTimeout = null;
 let isShuttingDown = false;
 
 function parseAllowedOrigins() {
-  return (process.env.ALLOWED_ORIGINS || '')
-    .split(',')
-    .map((origin) => origin.trim())
-    .filter(Boolean);
+  const defaults = isProduction ? [] : ['http://localhost:4200', 'http://localhost:3000'];
+  const envOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').map(o => o.trim()).filter(Boolean);
+  return [...defaults, ...envOrigins];
 }
 
 const allowedOrigins = parseAllowedOrigins();
 
 function isOriginAllowed(origin) {
-  if (!origin) return true;
-  if (!isProduction) return true;
+  if (!origin) return false;
   return allowedOrigins.includes(origin);
 }
 
@@ -571,7 +569,8 @@ app.use(cors({
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
-app.use('/uploads', express.static(UPLOADS_DIR));
+// Files served via authenticated routes in secure-document.routes.js
+// Static uploads directory disabled for security
 
 // =============================================================================
 // MULTER CONFIGURATION
@@ -597,11 +596,10 @@ const storage = multer.diskStorage({
 const upload = multer({
   storage,
   fileFilter: (req, file, cb) => {
-    if (ALLOWED_MIME_TYPES.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error(`Invalid file type: ${file.mimetype}`), false);
+    if (!ALLOWED_MIME_TYPES.includes(file.mimetype)) {
+      return cb(new Error(`Invalid file type: ${file.mimetype}`), false);
     }
+    cb(null, true);
   },
   limits: { fileSize: 50 * 1024 * 1024 }
 });
@@ -624,11 +622,29 @@ app.get('/api/status', async (req, res) => {
   const statusToken = process.env.STATUS_ENDPOINT_TOKEN;
   const providedToken = req.headers['x-status-token'];
 
-  if (isProduction && (!statusToken || providedToken !== statusToken)) {
+  if (isProduction && (!statusToken || !providedToken)) {
     return res.status(404).json({
       success: false,
       message: 'Not found'
     });
+  }
+
+  if (isProduction && statusToken) {
+    try {
+      const a = Buffer.from(String(providedToken), 'utf-8');
+      const b = Buffer.from(String(statusToken), 'utf-8');
+      if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+        return res.status(404).json({
+          success: false,
+          message: 'Not found'
+        });
+      }
+    } catch {
+      return res.status(404).json({
+        success: false,
+        message: 'Not found'
+      });
+    }
   }
 
   const report = {
@@ -815,7 +831,7 @@ app.get('/api/pinecone/stats', verifyFirebaseToken, isAdmin, async (req, res) =>
       message: 'Each namespace represents an isolated user - no cross-user data access possible'
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    res.status(500).json({ success: false, message: 'Internal Server Error' });
   }
 });
 
@@ -944,7 +960,7 @@ app.use('/api/notifications', notificationRoutes);
 const { getThumbnailPath, hasThumbnail } = require('./services/thumbnail.service');
 const { resolveDoc } = require('./services/firestore.service');
 
-app.get('/api/thumbnails/:filename', verifyFirebaseTokenOrQuery, async (req, res) => {
+app.get('/api/thumbnails/:filename', verifyFirebaseToken, async (req, res) => {
   const filename = req.params.filename;
   const documentId = path.basename(filename, '.png');
 
@@ -1119,7 +1135,7 @@ app.get('/api/rendering/regenerate', verifyFirebaseToken, isAdmin, async (req, r
 
   } catch (error) {
     console.error('Regeneration error:', error.message);
-    res.status(500).json({ success: false, message: error.message });
+    res.status(500).json({ success: false, message: 'Internal Server Error' });
   }
 });
 

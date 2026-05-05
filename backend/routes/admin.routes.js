@@ -39,7 +39,7 @@ router.post('/seed-stats', async (req, res) => {
         const result = await seedDashboardStats();
         res.json({ success: true, message: 'Dashboard stats seeded', data: result });
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        res.status(500).json({ success: false, message: 'Internal Server Error' });
     }
 });
 

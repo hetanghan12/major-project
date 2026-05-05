@@ -15,31 +15,41 @@
 const { getFirestore, getAuth } = require('../config/firebase.config');
 const { logSecurityEvent, trackAiRequest } = require('../services/analytics.service');
 const { getGlobalStats, getDailyStats, getUnifiedDashboard } = require('../services/dashboard-stats.service');
+const { LRUCache } = require('lru-cache');
 
-// ============================================================================
-// IN-MEMORY CACHE
-// ============================================================================
-const CACHE_TTL = 60000; // 60 seconds (up from 30s)
-const STORAGE_ACTIVITY_CACHE_TTL = 300000; // 5 minutes
+const CACHE_TTL = 60000;
+const STORAGE_ACTIVITY_CACHE_TTL = 300000;
+const MAX_CACHE_ENTRIES = 100;
 
-const cache = {};
+const cache = new LRUCache({
+    max: MAX_CACHE_ENTRIES,
+    ttl: CACHE_TTL,
+    allowStale: true,
+    staleTTL: 30000
+});
 
-const withCache = async (cacheKey, fetchFn, defaultData, ttl = CACHE_TTL) => {
-    const now = Date.now();
-    if (!cache[cacheKey]) cache[cacheKey] = { data: null, timestamp: 0 };
+const storageActivityCache = new LRUCache({
+    max: 10,
+    ttl: STORAGE_ACTIVITY_CACHE_TTL,
+    allowStale: true,
+    staleTTL: 60000
+});
 
-    if (cache[cacheKey].data && (now - cache[cacheKey].timestamp < ttl)) {
-        return cache[cacheKey].data;
+const withCache = async (cacheObj, cacheKey, fetchFn, defaultData) => {
+    const cached = cacheObj.get(cacheKey);
+    if (cached !== undefined) {
+        return cached;
     }
 
     try {
         const data = await fetchFn();
-        cache[cacheKey] = { data, timestamp: now };
+        cacheObj.set(cacheKey, data);
         return data;
     } catch (error) {
         if (error.code === 8 || error.message.includes('Quota')) {
-            console.warn(`⚠️  [CACHE] Quota hit for ${cacheKey}. Serving stale/fallback.`);
-            return cache[cacheKey].data || defaultData;
+            console.warn(`⚠️  [CACHE] Quota hit for ${cacheKey}. Serving fallback.`);
+            const stale = cacheObj.getStale(cacheKey);
+            return stale || defaultData;
         }
         throw error;
     }
@@ -50,7 +60,7 @@ const withCache = async (cacheKey, fetchFn, defaultData, ttl = CACHE_TTL) => {
 // ============================================================================
 exports.getDashboardStats = async (req, res) => {
     try {
-        const data = await withCache('dashboard', async () => {
+        const data = await withCache(cache, 'dashboard', async () => {
             const db = getFirestore();
             const { getCategory } = require('../services/dashboard-stats.service');
 
@@ -141,7 +151,7 @@ exports.getDashboardStats = async (req, res) => {
         res.json({ success: true, data });
     } catch (error) {
         console.error('Admin Dashboard API Error:', error);
-        res.status(500).json({ success: false, message: error.message });
+        res.status(500).json({ success: false, message: 'Internal Server Error' });
     }
 };
 
@@ -150,7 +160,7 @@ exports.getDashboardStats = async (req, res) => {
 // ============================================================================
 exports.getStorageActivity = async (req, res) => {
     try {
-        const results = await withCache('storageActivity', async () => {
+        const results = await withCache(storageActivityCache, 'storageActivity', async () => {
             // Max 7 Firestore reads
             const dailyData = await getDailyStats(7);
 
@@ -171,7 +181,7 @@ exports.getStorageActivity = async (req, res) => {
 
         res.json({ success: true, ...results });
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        res.status(500).json({ success: false, message: 'Internal Server Error' });
     }
 };
 
@@ -195,24 +205,29 @@ exports.getUnifiedDashboard = async (req, res) => {
 // LOG AI USAGE — write only, + increment aggregated counters
 // ============================================================================
 exports.logAiUsage = async (req, res) => {
-    try {
-        const { userId, model, tokens, cost, requestType } = req.body;
-        const db = getFirestore();
+  try {
+    const { model, tokens, cost, requestType } = req.body;
+    const userId = req.user.uid;
 
-        await db.collection('ai_usage').add({
-            userId,
-            model,
-            tokens,
-            cost: Number(cost) || 0,
-            requestType: requestType || 'chat',
-            timestamp: new Date().toISOString()
-        });
-
-        // Update aggregated counters (async, non-blocking)
-        trackAiRequest().catch(err => console.error('AI tracking failed:', err.message));
-
-        res.status(200).json({ success: true, message: 'AI usage logged' });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+    if (!model || tokens === undefined) {
+      return res.status(400).json({ success: false, message: 'Missing required fields: model, tokens' });
     }
+
+    const db = getFirestore();
+    await db.collection('ai_usage').add({
+      userId,
+      model,
+      tokens: Number(tokens) || 0,
+      cost: Number(cost) || 0,
+      requestType: requestType || 'chat',
+      timestamp: new Date().toISOString()
+    });
+
+    // Update aggregated counters (async, non-blocking)
+    trackAiRequest().catch(err => console.error('AI tracking failed:', err.message));
+
+    res.status(200).json({ success: true, message: 'AI usage logged' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Internal Server Error' });
+  }
 };

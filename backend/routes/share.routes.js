@@ -118,7 +118,7 @@ router.get('/with-me', verifyFirebaseToken, async (req, res) => {
         });
     } catch (error) {
         console.error('Shared with me error:', error);
-        res.status(500).json({ success: false, message: 'Failed to fetch shared files', details: error.message, stack: error.stack });
+        res.status(500).json({ success: false, message: 'Failed to fetch shared files' });
     }
 });
 
@@ -142,7 +142,7 @@ router.get('/by-me', verifyFirebaseToken, async (req, res) => {
         });
     } catch (error) {
         console.error('Shared by me error:', error);
-        res.status(500).json({ success: false, message: 'Failed to fetch your shares', details: error.message, stack: error.stack });
+        res.status(500).json({ success: false, message: 'Failed to fetch your shares' });
     }
 });
 

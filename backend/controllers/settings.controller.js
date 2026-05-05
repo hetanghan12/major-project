@@ -14,6 +14,47 @@ const DEFAULT_SETTINGS = {
     }
 };
 
+const ALLOWED_STORAGE_FIELDS = ['defaultFolder', 'autoDeleteTrash', 'fileVersioning'];
+const ALLOWED_AI_FIELDS = ['accessScope', 'autoSummary', 'smartTagging'];
+const ALLOWED_AUTO_DELETE_OPTIONS = ['7_days', '14_days', '30_days', '60_days', 'never'];
+const ALLOWED_ACCESS_SCOPE = ['all', 'documents_only', 'disabled'];
+
+function sanitizeStorageInput(input) {
+    const sanitized = {};
+    for (const key of ALLOWED_STORAGE_FIELDS) {
+        if (input.hasOwnProperty(key)) {
+            const value = input[key];
+            if (key === 'autoDeleteTrash') {
+                if (ALLOWED_AUTO_DELETE_OPTIONS.includes(value)) {
+                    sanitized[key] = value;
+                }
+            } else if (key === 'fileVersioning') {
+                sanitized[key] = Boolean(value);
+            } else if (key === 'defaultFolder' && typeof value === 'string') {
+                sanitized[key] = value;
+            }
+        }
+    }
+    return sanitized;
+}
+
+function sanitizeAiInput(input) {
+    const sanitized = {};
+    for (const key of ALLOWED_AI_FIELDS) {
+        if (input.hasOwnProperty(key)) {
+            const value = input[key];
+            if (key === 'accessScope') {
+                if (ALLOWED_ACCESS_SCOPE.includes(value)) {
+                    sanitized[key] = value;
+                }
+            } else if (key === 'autoSummary' || key === 'smartTagging') {
+                sanitized[key] = Boolean(value);
+            }
+        }
+    }
+    return sanitized;
+}
+
 /**
  * Get user settings
  */
@@ -51,8 +92,20 @@ exports.updateSettings = async (req, res) => {
         const docRef = db.collection('users').doc(req.user.uid);
 
         const updateData = {};
-        if (storage) updateData['settings.storage'] = storage;
-        if (ai) updateData['settings.ai'] = ai;
+
+        if (storage && typeof storage === 'object') {
+            const sanitizedStorage = sanitizeStorageInput(storage);
+            if (Object.keys(sanitizedStorage).length > 0) {
+                updateData['settings.storage'] = sanitizedStorage;
+            }
+        }
+
+        if (ai && typeof ai === 'object') {
+            const sanitizedAi = sanitizeAiInput(ai);
+            if (Object.keys(sanitizedAi).length > 0) {
+                updateData['settings.ai'] = sanitizedAi;
+            }
+        }
 
         if (Object.keys(updateData).length > 0) {
             await docRef.update(updateData);

@@ -134,7 +134,7 @@ router.post('/regenerate/:documentId', verifyFirebaseToken, async (req, res) => 
             ...result
         });
     } catch (error) {
-        return res.status(500).json({ success: false, error: error.message });
+        return res.status(500).json({ success: false, message: 'Internal Server Error' });
     }
 });
 

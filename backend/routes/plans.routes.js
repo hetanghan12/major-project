@@ -9,7 +9,7 @@ router.get('/', verifyFirebaseToken, async (req, res) => {
         res.json({ success: true, plans });
     } catch (error) {
         console.error('Failed to fetch subscription plans:', error);
-        res.status(500).json({ success: false, message: 'Failed to fetch plans', error: error.message });
+        res.status(500).json({ success: false, message: 'Failed to fetch plans' });
     }
 });
 

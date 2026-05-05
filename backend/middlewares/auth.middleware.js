@@ -30,14 +30,10 @@ function extractBearerToken(authHeader) {
     return token || null;
 }
 
-function extractFirebaseToken(req, { allowQueryToken = false } = {}) {
+function extractFirebaseToken(req) {
     const headerToken = extractBearerToken(req.headers.authorization);
     if (headerToken) {
         return headerToken;
-    }
-
-    if (allowQueryToken && typeof req.query?.token === 'string' && req.query.token.trim()) {
-        return req.query.token.trim();
     }
 
     return null;
@@ -115,37 +111,7 @@ async function verifyFirebaseToken(req, res, next) {
 
         return res.status(401).json({
             success: false,
-            message: 'Authentication failed',
-            error: error.message
-        });
-    }
-}
-
-async function verifyFirebaseTokenOrQuery(req, res, next) {
-    try {
-        console.log(`[AUTH] Verifying token for path: ${req.path}`);
-
-        const idToken = extractFirebaseToken(req, { allowQueryToken: true });
-
-        if (!idToken) {
-            console.log('[AUTH] No token found in header or query');
-            return res.status(401).json({
-                success: false,
-                message: 'No authorization token provided'
-            });
-        }
-
-        await attachUserToRequest(req, idToken);
-
-        console.log(`✅ Authenticated user: ${req.user.email} (${req.user.uid})`);
-        next();
-    } catch (error) {
-        console.error('❌ Token verification failed:', error.message);
-
-        return res.status(401).json({
-            success: false,
-            message: 'Authentication failed',
-            error: error.message
+            message: 'Authentication failed'
         });
     }
 }
@@ -200,13 +166,12 @@ async function isAdmin(req, res, next) {
 
         return res.status(403).json({ success: false, message: 'Forbidden: Admin access required' });
     } catch (error) {
-        return res.status(500).json({ success: false, message: 'Admin verification failed', error: error.message });
+        return res.status(500).json({ success: false, message: 'Admin verification failed' });
     }
 }
 
 module.exports = {
     verifyFirebaseToken,
-    verifyFirebaseTokenOrQuery,
     optionalAuth,
     isAdmin,
     isAdminUser,
