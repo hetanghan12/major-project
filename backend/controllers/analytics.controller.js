@@ -61,90 +61,29 @@ const withCache = async (cacheObj, cacheKey, fetchFn, defaultData) => {
 exports.getDashboardStats = async (req, res) => {
     try {
         const data = await withCache(cache, 'dashboard', async () => {
-            const db = getFirestore();
-            const { getCategory } = require('../services/dashboard-stats.service');
-
-            // 1. Compute real stats from documents collection
-            let totalFiles = 0;
-            let totalStorageBytes = 0;
-            let uploadsToday = 0;
-            const todayStr = new Date().toISOString().split('T')[0];
-
-            const typeDistribution = {
-                documents: { count: 0, bytes: 0 },
-                image: { count: 0, bytes: 0 },
-                video: { count: 0, bytes: 0 },
-                audio: { count: 0, bytes: 0 },
-                other: { count: 0, bytes: 0 }
-            };
-
-            try {
-                const docsSnap = await db.collection('files').get();
-                docsSnap.forEach(doc => {
-                    const data = doc.data();
-                    if (data.isFolder) return;
-
-                    const size = data.fileSize || 0;
-                    totalFiles++;
-                    totalStorageBytes += size;
-
-                    const category = getCategory(data.fileType, data.fileName);
-                    if (typeDistribution[category]) {
-                        typeDistribution[category].count++;
-                        typeDistribution[category].bytes += size;
-                    } else {
-                        typeDistribution.other.count++;
-                        typeDistribution.other.bytes += size;
-                    }
-
-                    const uploadDate = (data.uploadedAt || data.createdAt || '').split('T')[0];
-                    if (uploadDate === todayStr) {
-                        uploadsToday++;
-                    }
-                });
-            } catch (docsErr) {
-                console.error('Documents scan failed:', docsErr.message);
-            }
-
-            // 2. Get users from Auth (source of truth)
-            let totalUsers = 0;
-            let activeUsers24h = 0;
-            try {
-                const auth = getAuth();
-                const usersResult = await auth.listUsers(1000);
-                totalUsers = usersResult.users.length;
-                const now = Date.now();
-                const oneDay = 24 * 60 * 60 * 1000;
-                usersResult.users.forEach(u => {
-                    if (u.metadata.lastSignInTime) {
-                        if (now - new Date(u.metadata.lastSignInTime).getTime() <= oneDay) {
-                            activeUsers24h++;
-                        }
-                    }
-                });
-            } catch (authError) {
-                console.warn('Auth listUsers failed:', authError.message);
-            }
-
+            const stats = await getGlobalStats();
             const maxStorageBytes = 10 * 1024 * 1024 * 1024; // 10 GB cap
 
             return {
-                totalUsers,
-                totalDocuments: totalFiles,
-                totalStorageBytes,
-                storagePercentage: Math.min((totalStorageBytes / maxStorageBytes) * 100, 100).toFixed(1),
-                activeUsers24h: activeUsers24h || 1,
-                uploadsToday,
-                aiRequestsToday: 0,
-                typeDistribution
+                totalUsers: stats.totalUsers || 0,
+                totalDocuments: stats.totalFiles || stats.totalDocuments || 0,
+                totalStorageBytes: stats.totalStorageUsed || 0,
+                storagePercentage: Math.min(((stats.totalStorageUsed || 0) / maxStorageBytes) * 100, 100).toFixed(1),
+                activeUsers24h: stats.activeUsers24h || 1,
+                uploadsToday: stats.uploadsToday || 0,
+                aiRequestsToday: stats.aiRequestsToday || 0,
+                typeDistribution: stats.typeDistribution || {
+                    documents: { count: 0, bytes: 0 },
+                    media: { count: 0, bytes: 0 },
+                    others: { count: 0, bytes: 0 }
+                }
             };
         }, {
             totalUsers: 0, totalDocuments: 0, totalStorageBytes: 0,
             storagePercentage: "0.0", activeUsers24h: 0,
             typeDistribution: {
-                documents: { count: 0, bytes: 0 }, image: { count: 0, bytes: 0 },
-                video: { count: 0, bytes: 0 }, audio: { count: 0, bytes: 0 },
-                other: { count: 0, bytes: 0 }
+                documents: { count: 0, bytes: 0 }, media: { count: 0, bytes: 0 },
+                others: { count: 0, bytes: 0 }
             }
         });
 

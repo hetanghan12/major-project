@@ -190,83 +190,19 @@ async function getUnifiedDashboard() {
     }
 
     try {
-        console.log('🔄 [STATS] Fetching fresh unified dashboard data...');
+        console.log('🔄 [STATS] Fetching optimized unified dashboard data...');
         const db = getFirestore();
 
-        // 1. COMPUTE REAL STATS from actual documents collection
-        let totalFiles = 0;
-        let totalStorageBytes = 0;
-        const typeDistribution = {
-            documents: { count: 0, bytes: 0 },
-            media: { count: 0, bytes: 0 },
-            others: { count: 0, bytes: 0 }
-        };
+        // 1. READ PRE-COMPUTED GLOBAL STATS (Single Document Read - FAST)
+        const globalStats = await getGlobalStats();
 
-        try {
-            const [filesSnap, docsSnap] = await Promise.all([
-                db.collection('files').get(),
-                db.collection('documents').get()
-            ]);
-
-            // DEDUPLICATION: Prevent double counting across collections
-            const uniqueFiles = new Map();
-
-            const collectUniqueFiles = (snap) => {
-                snap.forEach(doc => {
-                    const data = doc.data();
-                    const docId = data.documentId || data.fileId || doc.id;
-
-                    // Skip analytics-only ghost records
-                    if (!data.documentId && !data.uploadId && data.storageProvider) return;
-
-                    if (!uniqueFiles.has(docId)) {
-                        uniqueFiles.set(docId, data);
-                    } else if (data.status === 'completed') {
-                        uniqueFiles.set(docId, data);
-                    }
-                });
-            };
-
-            collectUniqueFiles(filesSnap);
-            collectUniqueFiles(docsSnap);
-
-            uniqueFiles.forEach((data) => {
-                if (data.isFolder) return;
-
-                const size = data.fileSize || 0;
-                totalFiles++;
-                totalStorageBytes += size;
-
-                const category = getCategory(data.fileType, data.fileName);
-                if (typeDistribution[category]) {
-                    typeDistribution[category].count++;
-                    typeDistribution[category].bytes += size;
-                } else {
-                    typeDistribution.others.count++;
-                    typeDistribution.others.bytes += size;
-                }
-            });
-        } catch (docsErr) {
-            console.error('Documents scan failed:', docsErr.message);
-        }
-
-        // 2. Get Users from Auth
-        let totalUsers = 0;
-        try {
-            const auth = require('../config/firebase.config').getAuth();
-            const usersResult = await auth.listUsers(1000);
-            totalUsers = usersResult.users.length;
-        } catch (e) {
-            console.warn('Auth list failed:', e.message);
-        }
-
-        // 3. Get Daily Activity (Last 7 days)
+        // 2. READ PRE-COMPUTED DAILY STATS (Max 7 Document Reads - FAST)
         const activity = await getDailyStats(7);
 
-        // 4. Get Recent Activity (limited)
+        // 3. Get Recent Activity (Optimized limit)
         const activitySnap = await db.collection('audit_logs')
             .orderBy('timestamp', 'desc')
-            .limit(10)
+            .limit(5) // Reduced limit for speed
             .get();
 
         const recentActivity = [];
@@ -283,10 +219,10 @@ async function getUnifiedDashboard() {
 
         const result = {
             stats: {
-                totalUsers,
-                totalFiles,
-                totalStorageBytes,
-                totalAiRequests: 0
+                totalUsers: globalStats.totalUsers || 0,
+                totalFiles: globalStats.totalFiles || globalStats.totalDocuments || 0,
+                totalStorageBytes: globalStats.totalStorageUsed || 0,
+                totalAiRequests: globalStats.aiRequestsToday || 0
             },
             storageActivity: activity.map(d => ({
                 label: d.day,
@@ -294,7 +230,11 @@ async function getUnifiedDashboard() {
                 uploads: d.uploads,
                 date: d.date
             })),
-            typeDistribution,
+            typeDistribution: globalStats.typeDistribution || {
+                documents: { count: 0, bytes: 0 },
+                media: { count: 0, bytes: 0 },
+                others: { count: 0, bytes: 0 }
+            },
             recentActivity
         };
 
