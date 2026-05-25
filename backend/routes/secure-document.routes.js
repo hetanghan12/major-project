@@ -215,7 +215,7 @@ router.post('/bulk-update-trash',
         const results = { success: [], failed: [] };
 
         try {
-            const { getFirestore } = require('../config/firebase.config');
+            const { getFirestore } = require('../services/firebase.service');
             const db = getFirestore();
             const batch = db.batch();
 
@@ -424,7 +424,7 @@ router.post('/upload',
         // STEP 0.1: VALIDATE ALLOWED FILE TYPES (Security Settings)
         // ============================================================
         try {
-            const { getFirestore } = require('../config/firebase.config');
+            const { getFirestore } = require('../services/firebase.service');
             const db = getFirestore();
             const data = settingsDoc.exists ? settingsDoc.data() : {};
             const securitySettings = data.securitySettings || {};
@@ -2035,7 +2035,7 @@ async function performTrashUpdate(userId, resourceId, isTrashed) {
 
     // If it's a folder, recursively update all children
     if (doc.isFolder) {
-        const { getFirestore } = require('../config/firebase.config');
+        const { getFirestore } = require('../services/firebase.service');
         const db = getFirestore();
         const children = await db.collection('files')
             .where('userId', '==', userId)
@@ -2286,7 +2286,7 @@ async function performRecursiveCopy(userId, sourceId, targetFolderId, isRoot = f
 
     // Recursive step for folders
     if (sourceDoc.isFolder) {
-        const { getFirestore } = require('../config/firebase.config');
+        const { getFirestore } = require('../services/firebase.service');
         const db = getFirestore();
         const children = await db.collection('files')
             .where('userId', '==', userId)

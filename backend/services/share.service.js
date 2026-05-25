@@ -11,8 +11,8 @@
  * @author CloudSpace
  */
 
-const { getFirestore } = require('../config/firebase.config');
-const { getAuth } = require('../config/firebase.config');
+const { getFirestore } = require('./firebase.service');
+const { getAuth } = require('./firebase.service');
 const { v4: uuidv4 } = require('uuid');
 const { createNotification } = require('./notification.service');
 const { sendShareEmail } = require('./email.service');

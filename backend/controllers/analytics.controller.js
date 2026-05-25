@@ -12,7 +12,7 @@
  * @author CloudSpace Optimization
  */
 
-const { getFirestore, getAuth } = require('../config/firebase.config');
+const { getFirestore, getAuth } = require('../services/firebase.service');
 const { logSecurityEvent, trackAiRequest } = require('../services/analytics.service');
 const { getGlobalStats, getDailyStats, getUnifiedDashboard } = require('../services/dashboard-stats.service');
 const { LRUCache } = require('lru-cache');

@@ -6,9 +6,9 @@
  * @author College Project
  */
 
-const { getAuth } = require('../config/firebase.config');
+const { getAuth } = require('../services/firebase.service');
 const { createOrUpdateUser, getUser, getUserByEmail } = require('../services/firestore.service');
-const { getFirestore } = require('../config/firebase.config');
+const { getFirestore } = require('../services/firebase.service');
 const { activatePendingShares } = require('../services/share.service');
 const { asyncHandler, ApiError } = require('../middlewares/error.middleware');
 const { logSecurityEvent, trackNewUser } = require('../services/analytics.service');
@@ -222,7 +222,7 @@ const syncUser = asyncHandler(async (req, res) => {
     // Each user gets their own isolated namespace (namespace = userId)
     let pineconeNamespace = null;
     try {
-        const { initializeUserNamespace } = require('../config/pinecone.config');
+        const { initializeUserNamespace } = require('../services/pinecone.service');
         pineconeNamespace = await initializeUserNamespace(uid);
         console.log(`   ✅ Pinecone namespace ready: ${pineconeNamespace.namespace}`);
     } catch (error) {

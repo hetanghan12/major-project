@@ -1,4 +1,4 @@
-const { getFirestore } = require('../config/firebase.config');
+const { getFirestore } = require('./firebase.service');
 
 const PRICING = {
     'text-embedding-3-large': 0.00013 / 1000,

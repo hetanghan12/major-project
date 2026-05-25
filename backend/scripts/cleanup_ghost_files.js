@@ -13,7 +13,7 @@
  */
 
 require('dotenv').config();
-const { getFirestore } = require('../config/firebase.config');
+const { getFirestore } = require('../services/firebase.service');
 
 async function cleanupGhostFiles() {
     const db = getFirestore();

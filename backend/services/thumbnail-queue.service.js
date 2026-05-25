@@ -389,7 +389,7 @@ let cleanupInterval = setInterval(() => {
 async function recoverOrphanedJobs() {
     console.log('🧹 [Thumbnail Recovery] Starting scan for stuck jobs...');
     try {
-        const { getFirestore } = require('../config/firebase.config');
+        const { getFirestore } = require('./firebase.service');
         const db = getFirestore();
 
         // 1. Find docs in 'processing' state

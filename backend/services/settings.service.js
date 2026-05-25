@@ -1,4 +1,4 @@
-const { getFirestore } = require('../config/firebase.config');
+const { getFirestore } = require('./firebase.service');
 
 const DEFAULT_SETTINGS = {
     systemName: "Cloud Space",

@@ -1,6 +1,6 @@
 require('dotenv').config({ path: '.env' });
-const { initializeFirebase, getFirestore } = require('../config/firebase.config');
-const { initializeAWS } = require('../config/aws.config');
+const { initializeFirebase, getFirestore } = require('../services/firebase.service');
+const { initializeAWS } = require('../services/aws.service');
 const { renderThumbnail } = require('../services/render.service');
 const { updateDocumentStatus } = require('../services/firestore.service');
 

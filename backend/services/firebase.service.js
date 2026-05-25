@@ -43,7 +43,7 @@ function initializeFirebase() {
         // OPTION 2: From File Path (Local development)
         else {
             const serviceAccountPath = process.env.FIREBASE_SERVICE_ACCOUNT_PATH
-                || path.join(__dirname, 'firebase-service-account.json');
+                || path.join(__dirname, '..', 'config', 'firebase-service-account.json');
 
             if (!fs.existsSync(serviceAccountPath)) {
                 throw new Error(`Firebase service account file not found at: ${serviceAccountPath}. For production (Render), please set the FIREBASE_SERVICE_ACCOUNT_JSON environment variable.`);

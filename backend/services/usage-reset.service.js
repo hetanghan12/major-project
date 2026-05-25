@@ -4,7 +4,7 @@
  * Handles automatic monthly reset of user limits (AI requests).
  */
 
-const { getFirestore, admin } = require('../config/firebase.config');
+const { getFirestore, admin } = require('./firebase.service');
 
 let schedulerHandle = null;
 

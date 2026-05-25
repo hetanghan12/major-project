@@ -1,5 +1,5 @@
 require('dotenv').config({ path: '../.env' });
-const { initializeFirebase, getFirestore } = require('../config/firebase.config');
+const { initializeFirebase, getFirestore } = require('../services/firebase.service');
 
 function main() {
     try {

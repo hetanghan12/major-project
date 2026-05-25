@@ -9,7 +9,7 @@
  * @author College Project
  */
 
-const { getAuth, getFirestore } = require('../config/firebase.config');
+const { getAuth, getFirestore } = require('../services/firebase.service');
 
 function buildRequestUser(decodedToken) {
     return {

@@ -1,4 +1,4 @@
-const { getFirestore } = require('../config/firebase.config');
+const { getFirestore } = require('../services/firebase.service');
 
 const logAuditEvent = async (event, userEmail, userId, ipAddress, status, details = {}) => {
     try {

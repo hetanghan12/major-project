@@ -6,8 +6,8 @@
  * @author College Project
  */
 
-const { generateEmbedding, generateEmbeddings } = require('../config/openai.config');
-const { upsertVectors, queryVectors, deleteVectorsByDocument } = require('../config/pinecone.config');
+const { generateEmbedding, generateEmbeddings } = require('./openai.service');
+const { upsertVectors, queryVectors, deleteVectorsByDocument } = require('./pinecone.service');
 const { v4: uuidv4 } = require('uuid');
 
 /**

@@ -1,5 +1,5 @@
 require('dotenv').config({ path: '../.env' });
-const { initializeFirebase, getFirestore } = require('../config/firebase.config');
+const { initializeFirebase, getFirestore } = require('../services/firebase.service');
 const { getDownloadUrl, initS3Service } = require('../services/s3.service');
 const https = require('https');
 

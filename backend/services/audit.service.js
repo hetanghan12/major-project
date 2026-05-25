@@ -8,7 +8,7 @@
  * @author CloudSpace
  */
 
-const { getFirestore } = require('../config/firebase.config');
+const { getFirestore } = require('./firebase.service');
 const { v4: uuidv4 } = require('uuid');
 
 const AUDIT_COLLECTION = 'audit_logs';

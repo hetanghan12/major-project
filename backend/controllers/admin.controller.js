@@ -1,4 +1,4 @@
-const { getAuth, getFirestore, getStorage } = require('../config/firebase.config');
+const { getAuth, getFirestore, getStorage } = require('../services/firebase.service');
 const { S3Client, ListObjectsV2Command } = require('@aws-sdk/client-s3');
 const { getGlobalStats, getDailyStats, getUnifiedDashboard } = require('../services/dashboard-stats.service');
 require('dotenv').config();

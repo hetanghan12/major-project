@@ -10,7 +10,7 @@
  * @author College Project
  */
 
-const { getFirestore } = require('../config/firebase.config');
+const { getFirestore } = require('./firebase.service');
 
 // Collection names
 const USERS_COLLECTION = 'users';

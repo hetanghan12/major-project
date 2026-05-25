@@ -1,4 +1,4 @@
-const { getFirestore, getAuth } = require('../config/firebase.config');
+const { getFirestore, getAuth } = require('../services/firebase.service');
 const { deleteUserAccount } = require('../services/deletion.service');
 
 const DEFAULT_SETTINGS = {

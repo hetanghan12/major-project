@@ -5,7 +5,7 @@
  * Minimizes Firestore reads by using atomic counters and limited queries.
  */
 
-const { getFirestore } = require('../config/firebase.config');
+const { getFirestore } = require('../services/firebase.service');
 const { getUserStorageStats, PLANS } = require('../services/storage-quota.service');
 const { getSharedByMe, getSharedWithMe } = require('../services/share.service');
 const { asyncHandler } = require('../middlewares/error.middleware');

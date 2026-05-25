@@ -21,7 +21,7 @@
 
 const { searchDocuments, buildContext } = require('../services/embedding.service');
 const { getAccessibleNamespacesForAI } = require('../services/share.service');
-const { generateResponse } = require('../config/openai.config');
+const { generateResponse } = require('../services/openai.service');
 const { asyncHandler, ApiError } = require('../middlewares/error.middleware');
 const { trackAiRequest, calculateCost } = require('../services/analytics.service');
 const { 
@@ -31,7 +31,7 @@ const {
 } = require('../services/storage-quota.service');
 const { createNotification } = require('../services/notification.service');
 const chatService = require('../services/chat.service');
-const { getFirestore, admin } = require('../config/firebase.config');
+const { getFirestore, admin } = require('../services/firebase.service');
 
 // Pricing and Cost calculation logic moved to centralized analytics.service.js
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL;

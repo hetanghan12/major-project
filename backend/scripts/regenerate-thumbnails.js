@@ -16,7 +16,7 @@ const fs = require('fs');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 // Import services
-const { initializeFirebase, getFirestore } = require('../config/firebase.config');
+const { initializeFirebase, getFirestore } = require('../services/firebase.service');
 const { generateThumbnail } = require('../services/thumbnail.service');
 const { updateDocumentStatus } = require('../services/firestore.service');
 

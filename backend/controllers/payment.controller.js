@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const { getFirestore } = require('../config/firebase.config');
+const { getFirestore } = require('../services/firebase.service');
 
 let Razorpay;
 let isRazorpayInstalled = false;

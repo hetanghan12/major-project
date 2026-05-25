@@ -5,7 +5,7 @@
  * Supports type distribution (images, videos, etc.)
  */
 
-const { getFirestore, admin } = require('../config/firebase.config');
+const { getFirestore, admin } = require('./firebase.service');
 
 const FieldValue = admin.firestore.FieldValue;
 
@@ -253,7 +253,7 @@ async function getUnifiedDashboard() {
 async function seedDashboardStats() {
     try {
         const db = getFirestore();
-        const auth = require('../config/firebase.config').getAuth();
+        const auth = require('./firebase.service').getAuth();
 
         console.log('🌱 [SEED] Re-calibrating dashboard stats...');
 

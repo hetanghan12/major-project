@@ -2,10 +2,10 @@
  * Analytics Service — Optimized
  */
 
-const { getFirestore, admin } = require('../config/firebase.config');
+const { getFirestore, admin } = require('./firebase.service');
 const { incrementGlobalStats, incrementDailyStats, getCategory, invalidateUnifiedCache } = require('./dashboard-stats.service');
 const { incrementUserStats } = require('./storage-quota.service');
-const { admin: firestoreAdmin } = require('../config/firebase.config');
+const { admin: firestoreAdmin } = require('./firebase.service');
 
 // Pricing per 1k tokens (Consistent with AI Controller)
 const PRICING = {

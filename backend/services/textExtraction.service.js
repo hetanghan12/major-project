@@ -12,7 +12,7 @@ const mammoth = require('mammoth');
 const path = require('path');
 const officeParser = require('officeparser');
 const Tesseract = require('tesseract.js');
-const { getOpenAI } = require('../config/openai.config');
+const { getOpenAI } = require('./openai.service');
 
 /**
  * Convert MIME type to file extension

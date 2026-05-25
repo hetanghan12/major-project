@@ -1,4 +1,4 @@
-const { getFirestore } = require('../config/firebase.config');
+const { getFirestore } = require('../services/firebase.service');
 const { checkMfaPermission } = require('../services/storage-quota.service');
 const speakeasy = require('speakeasy');
 const qrcode = require('qrcode');

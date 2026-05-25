@@ -12,7 +12,7 @@
  * @author College Project
  */
 
-const { getFirestore } = require('../config/firebase.config');
+const { getFirestore } = require('./firebase.service');
 
 /**
  * Create a new chat session for a user

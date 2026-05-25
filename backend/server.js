@@ -39,10 +39,10 @@ const pdfParse = require('pdf-parse');
 const mammoth = require('mammoth');
 
 // Firebase initialization (needed for auth and Firestore)
-const { initializeFirebase } = require('./config/firebase.config');
+const { initializeFirebase } = require('./services/firebase.service');
 
 // AWS S3 initialization (for file storage)
-const { initializeAWS } = require('./config/aws.config');
+const { initializeAWS } = require('./services/aws.service');
 
 // Auth Routes
 const authRoutes = require('./routes/auth.routes');
@@ -681,7 +681,7 @@ app.get('/api/status', async (req, res) => {
 
   // 1. Firebase Check
   try {
-    const { getAuth } = require('./config/firebase.config');
+    const { getAuth } = require('./services/firebase.service');
     const auth = getAuth();
     // Just check if auth object exists and has verifyIdToken
     if (auth && typeof auth.verifyIdToken === 'function') {
@@ -695,7 +695,7 @@ app.get('/api/status', async (req, res) => {
 
   // 2. AWS S3 Check
   try {
-    const { getS3Client, getBucketName } = require('./config/aws.config');
+    const { getS3Client, getBucketName } = require('./services/aws.service');
     const { HeadBucketCommand } = require('@aws-sdk/client-s3');
     const s3 = getS3Client();
     const bucketName = getBucketName();
@@ -1050,7 +1050,7 @@ app.get('/api/rendering/job/:jobId', verifyFirebaseToken, isAdmin, (req, res) =>
 app.get('/api/rendering/regenerate', verifyFirebaseToken, isAdmin, async (req, res) => {
   console.log('🖼️ Starting thumbnail regeneration for existing documents...');
 
-  const { getFirestore } = require('./config/firebase.config');
+  const { getFirestore } = require('./services/firebase.service');
   const { queueThumbnailJob } = require('./services/thumbnail-queue.service');
   const fs = require('fs');
 

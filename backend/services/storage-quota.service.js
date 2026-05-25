@@ -27,7 +27,7 @@
  * @version 1.0.0
  */
 
-const { getFirestore } = require('../config/firebase.config');
+const { getFirestore } = require('./firebase.service');
 const { getCategory } = require('./dashboard-stats.service');
 
 // Collection names

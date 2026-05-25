@@ -5,7 +5,7 @@
  * Stores data in users/{userId}/usage/ai.
  */
 
-const { getFirestore, admin } = require('../config/firebase.config');
+const { getFirestore, admin } = require('./firebase.service');
 const { PLANS } = require('../config/plans');
 
 /**

@@ -38,7 +38,7 @@
 
 const { deleteFromS3, fileExistsInS3 } = require('./s3.service');
 const { deleteDocument, getDocument, updateDocumentStatus } = require('./firestore.service');
-const { getPineconeIndex, deriveSecureNamespace } = require('../config/pinecone.config');
+const { getPineconeIndex, deriveSecureNamespace } = require('./pinecone.service');
 const fs = require('fs');
 const { trackFileDeletion } = require('./analytics.service');
 
@@ -474,7 +474,7 @@ function generateChunkIds(documentId, chunkCount) {
 async function autoDeleteTrash() {
     console.log(`\n🧹 ========== RUNNING 30-DAY TRASH CLEANUP ==========`);
     try {
-        const { getFirestore } = require('../config/firebase.config');
+        const { getFirestore } = require('./firebase.service');
         if (!getFirestore) return;
 
         const db = getFirestore();
@@ -528,7 +528,7 @@ async function deleteUserAccount(userId) {
     console.log(`   User ID: ${userId}`);
     console.log(`   Timestamp: ${new Date().toISOString()}`);
 
-    const { getFirestore, getAuth } = require('../config/firebase.config');
+    const { getFirestore, getAuth } = require('./firebase.service');
     const db = getFirestore();
     const auth = getAuth();
 
